@@ -1,0 +1,9 @@
+target/
+tools/
+ui/pkg/
+.git/
+/tmp/
+
+# angela session store (durable chat sessions + inference logs)
+.angela/
+.env

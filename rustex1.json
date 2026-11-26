@@ -1,0 +1,16 @@
+{
+  "name": "caper",
+  "port": 3030,
+  "host": "0.0.0.0",
+  "app": {
+    "package": "caper-app",
+    "lib": "caper_app",
+    "profile": "wasm",
+    "watch": ["app", "vendor/rustex1/kit"]
+  },
+  "server": {
+    "package": "caper-server",
+    "watch": ["server", "vendor/rustex1/devserver"]
+  },
+  "static": ["ui"]
+}

@@ -1,0 +1,183 @@
+/* chat shell — the demo IS the app (parity with m-js-cmp-chat/demo/index.html).
+   Theme tokens match the demo :root exactly; kit.css loads first so these
+   win. chat.css consumes them via var(--bg, #0f1419) etc.
+   --accent-2 / --bg-2 are NOT in the demo :root; they are set here to the
+   values the demo's fallback chains produce, so the kit skin (which defines
+   both: orange --accent-2, dark --bg-2) cannot leak in through
+   --mjs-accent-2 (active tab) and --mjs-tool (tool cards). */
+:root {
+  --bg: #0f1419;
+  --panel: #1a2332;
+  --panel-2: #243044;
+  --border: #2d3a4f;
+  --text: #e7ecf3;
+  --muted: #8b9bb4;
+  --accent: #3b82f6;
+  --accent-2: #3b82f6;
+  --bg-2: #334155;
+  --ok: #22c55e;
+  --err: #ef4444;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --sans: ui-sans-serif, system-ui, sans-serif;
+}
+* { box-sizing: border-box; }
+/* kit.css sets `html { font: 14px/... }`; the demo leaves html alone, so
+   rem-based rules (.welcome h1, bubble widths) resolve against the 16px
+   browser default. Restore that. */
+html { font-size: 16px; }
+html, body, #app { height: 100%; margin: 0; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  /* The demo sets no body type, so chat text inherits the 16px/normal
+     browser default. Stated explicitly because kit.css says
+     `html, body { font: 14px/1.55 ... }`, which would otherwise win. */
+  font-size: 16px;
+  line-height: normal;
+  overflow: hidden;
+}
+/* kit.css says `textarea { font-family: mono; font-size: 12px }`; the demo
+   has no such rule, so its draft inherits .mjs-chat. This restores that. */
+.mjs-chat textarea { font-family: inherit; font-size: inherit; }
+
+/* m-js-cmp-chat — cowork chat UI. Host themes via these tokens (or
+   --bg/--panel/--text/--border/--muted/--accent already used by cowork
+   and agent-desktop). All rules are scoped to .mjs-chat. */
+
+.mjs-chat {
+  --mjs-bg: var(--bg, #0f1419);
+  --mjs-panel: var(--panel, #1a2332);
+  --mjs-panel-2: var(--panel-2, var(--bg-2, #243044));
+  --mjs-line: var(--border, var(--line, #2d3a4f));
+  --mjs-line-2: var(--line-2, var(--border, #2d3a4f));
+  --mjs-ink: var(--text, var(--ink, #e7ecf3));
+  --mjs-dim: var(--muted, var(--dim, #8b9bb4));
+  --mjs-accent: var(--accent, #3b82f6);
+  --mjs-accent-2: var(--accent-2, var(--accent, #60a5fa));
+  --mjs-ok: var(--ok, var(--live, #22c55e));
+  --mjs-err: var(--err, var(--down, #ef4444));
+  --mjs-wait: var(--wait, #ffc861);
+  --mjs-user: var(--user, #1e3a5f);
+  --mjs-user-border: var(--user-border, #3b82f6);
+  --mjs-tool: var(--tool, var(--bg-2, #334155));
+  --mjs-mono: var(--mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
+  --mjs-sans: var(--sans, ui-sans-serif, system-ui, sans-serif);
+  box-sizing: border-box;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  color: var(--mjs-ink);
+  font-family: var(--mjs-sans);
+}
+.mjs-chat *,
+.mjs-chat *::before,
+.mjs-chat *::after { box-sizing: border-box; }
+.mjs-chat,
+.mjs-chat * {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
+}
+.mjs-chat *::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+.mjs-chat *::-webkit-scrollbar-track,
+.mjs-chat *::-webkit-scrollbar-corner {
+  background: transparent;
+}
+.mjs-chat *::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+.mjs-chat *::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(255, 255, 255, 0.38);
+  background-clip: padding-box;
+}
+
+.mjs-chat.mode-fullscreen { flex-direction: row; width: 100%; }
+.mjs-chat.mode-sidebar {
+  flex-direction: column;
+  width: 100%;
+  background: var(--mjs-panel);
+  border-left: 1px solid var(--mjs-line);
+}
+
+.mjs-chat .main {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--mjs-bg);
+  overflow: hidden;
+}
+
+.mjs-chat.mode-sidebar .main {
+  background: var(--mjs-panel);
+}
+
+/* The tab strip the app's columns share. */
+
+/* Transcript */
+
+@keyframes mjs-chat-caret { 50% { opacity: 0; } }
+
+/* ---- the legacy transcript's own cards ----------------------------------
+   Only `/chat-demo` draws these now. The app's transcript builds its
+   evidence rows from `fold_card` and its bubbles from the card
+   components, each of which carries its own CSS — so what is left here
+   is the old shape, kept because the demo page still renders it. */
+
+.mjs-chat .tool-call-progress.is-streaming {
+  border-color: var(--mjs-wait);
+}
+
+.mjs-chat .metric-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-right: 8px;
+  white-space: nowrap;
+}
+
+.mjs-chat .flex { display: flex; }
+.mjs-chat .gap-2 { gap: 8px; }
+.mjs-chat .mt-1 { margin-top: 4px; }
+.mjs-chat .mt-2 { margin-top: 8px; }
+.mjs-chat .text-xs { font-size: 12px; }
+.mjs-chat .font-mono { font-family: var(--mjs-mono); }
+.mjs-chat .font-semibold { font-weight: 600; }
+
+/* Composer */
+
+.mjs-chat .ph { display: inline-block; vertical-align: -0.125em; line-height: 1; }
+
+/* Shields Down (PLAN44 D12): the *viewport* glows red — slowly,
+   persistently — until the admin raises them again. The point is to be
+   impossible to forget: a registration window left open is a house with
+   the door standing open, and the page says so to everyone in the room.
+   It is a fixed overlay, not a body shadow: the app's own background
+   paints over body's inset shadow, which is why the glow was invisible. */
+body.shields-down::after {
+  content: "";
+  position: fixed; inset: 0;
+  pointer-events: none;
+  /* Above every app layer (they sit at z 30-ish); below hilite's tools. */
+  z-index: 2147482999;
+  animation: shields-pulse 2.6s ease-in-out infinite;
+}
+@keyframes shields-pulse {
+  0%, 100% {
+    box-shadow: inset 0 0 42px rgba(239, 68, 68, .38),
+                inset 0 0 12px rgba(239, 68, 68, .55);
+  }
+  50% {
+    box-shadow: inset 0 0 96px rgba(239, 68, 68, .8),
+                inset 0 0 26px rgba(239, 68, 68, .95);
+  }
+}
+
