@@ -25,7 +25,7 @@ pub fn register(rt: &mut Runtime) {
     home::register();
     // `/` is the three-column app shell, composed from the storybook
     // components.
-    rt.route("/", "Chat", |_params| {
+    rt.route("/", "Caper", |_params| {
         let mut d = Def::new().named("route /");
         d.tree(home::shell());
         d.finish()

@@ -1,5 +1,5 @@
-//! One-shot import of `.angela/sessions/<id>.json{,l}` into
-//! `.angela/conversations.db`.
+//! One-shot import of `.caper/sessions/<id>.json{,l}` into
+//! `.caper/conversations.db`.
 //!
 //! Runs on every server start and is **idempotent**: a session whose id is
 //! already a conversation is skipped, so the cost after the first start is
@@ -41,11 +41,11 @@ impl Report {
     }
 }
 
-/// Import every legacy session under `<root>/.angela/sessions` that the
+/// Import every legacy session under `<root>/.caper/sessions` that the
 /// database does not already have.
 pub fn run(store: &ConvStore, root: &std::path::Path) -> Report {
     let mut report = Report::default();
-    let dir = root.join(".angela").join("sessions");
+    let dir = root.join(".caper").join("sessions");
     if !dir.exists() {
         return report;
     }

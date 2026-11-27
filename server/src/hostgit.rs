@@ -48,7 +48,7 @@ const GIT_TIMEOUT_SECS: u64 = 30;
 // ── the registry file ───────────────────────────────────────────────────
 
 fn registry_path(root: &Path) -> PathBuf {
-    root.join(".angela").join("hosts.json")
+    root.join(".caper").join("hosts.json")
 }
 
 /// Read the registry, or an empty one. A corrupt file reads as empty rather
@@ -347,7 +347,7 @@ fn find(root: &Path, key: &str, id: &str) -> Option<Value> {
 
 /// Where a worktree for this repo and branch should live.
 ///
-/// Under `.angela/worktrees` beside the conversations, so a checkout chat
+/// Under `.caper/worktrees` beside the conversations, so a checkout chat
 /// made is recognisable as chat's and a sweep knows where to look. The
 /// branch's `/` becomes `-`: `feature/login` is one directory, not two.
 fn worktree_dir(root: &Path, repo_name: &str, branch: &str) -> PathBuf {
@@ -355,7 +355,7 @@ fn worktree_dir(root: &Path, repo_name: &str, branch: &str) -> PathBuf {
         .chars()
         .map(|c| if c == '/' { '-' } else { c })
         .collect();
-    root.join(".angela")
+    root.join(".caper")
         .join("worktrees")
         .join(format!("{repo_name}-{safe}"))
 }

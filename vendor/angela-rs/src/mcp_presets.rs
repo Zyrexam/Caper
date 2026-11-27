@@ -7,9 +7,9 @@ use crate::mcp::{Framing, ServerSpec};
 /// The chat MCP configuration is re-read whenever servers are selected.
 pub fn config_path() -> PathBuf {
     std::env::var_os("CHAT_MCP_CONFIG").map(PathBuf::from).unwrap_or_else(|| {
-        std::env::var_os("ANGELA_ROOT").map(PathBuf::from)
+        std::env::var_os("CAPER_ROOT").map(PathBuf::from)
             .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
-            .join(".angela/mcp.json")
+            .join(".caper/mcp.json")
     })
 }
 

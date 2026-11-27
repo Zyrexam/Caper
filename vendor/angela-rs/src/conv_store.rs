@@ -173,7 +173,7 @@ impl TreeNode {
     }
 }
 
-/// Durable conversations in `<root>/.angela/conversations.db`.
+/// Durable conversations in `<root>/.caper/conversations.db`.
 pub struct ConvStore {
     pub project_root: PathBuf,
     conn: Mutex<Connection>,
@@ -618,7 +618,7 @@ impl ConvStore {
         // The pre-migration files, if this project still has them: the user
         // asked for the conversation gone, and leaving a copy that a
         // re-migration would resurrect is not "gone".
-        let legacy = self.project_root.join(".angela").join("sessions");
+        let legacy = self.project_root.join(".caper").join("sessions");
         for ext in ["json", "jsonl"] {
             let p = legacy.join(format!("{id}.{ext}"));
             if p.exists() {

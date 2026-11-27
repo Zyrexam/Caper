@@ -171,7 +171,7 @@ impl Perimeter {
 }
 
 fn path_of(root: &Path) -> PathBuf {
-    root.join(".angela").join("perimeter.json")
+    root.join(".caper").join("perimeter.json")
 }
 
 struct GateImpl {

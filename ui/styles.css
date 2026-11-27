@@ -6,17 +6,17 @@
    both: orange --accent-2, dark --bg-2) cannot leak in through
    --mjs-accent-2 (active tab) and --mjs-tool (tool cards). */
 :root {
-  --bg: #0f1419;
-  --panel: #1a2332;
-  --panel-2: #243044;
-  --border: #2d3a4f;
-  --text: #e7ecf3;
-  --muted: #8b9bb4;
-  --accent: #3b82f6;
-  --accent-2: #3b82f6;
-  --bg-2: #334155;
-  --ok: #22c55e;
-  --err: #ef4444;
+  --bg: #0d1224;
+  --panel: #151b31;
+  --panel-2: #202744;
+  --border: #303958;
+  --text: #edf0f7;
+  --muted: #9ba6c3;
+  --accent: #7c8cf8;
+  --accent-2: #b39aef;
+  --bg-2: #242d4d;
+  --ok: #55c29a;
+  --err: #ec7c86;
   --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   --sans: ui-sans-serif, system-ui, sans-serif;
 }

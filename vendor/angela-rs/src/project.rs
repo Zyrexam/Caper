@@ -1,9 +1,9 @@
-//! Port of `angela/src/project.mjs` — the project root and `.angela/` layout.
+//! Port of `angela/src/project.mjs` — the project root and `.caper/` layout.
 //!
 //! ```text
 //! <root>/
-//!   .angela/
-//!     agents/     # -a my-agent  → .angela/agents/my-agent.<ext>
+//!   .caper/
+//!     agents/     # -a my-agent  → .caper/agents/my-agent.<ext>
 //!     sessions/   # durable session state + inference logs
 //! ```
 
@@ -28,7 +28,7 @@ pub fn resolve_project_root(config_path: Option<&str>) -> PathBuf {
 }
 
 pub fn angela_dir(root: &Path) -> PathBuf {
-    root.join(".angela")
+    root.join(".caper")
 }
 
 pub fn agents_dir(root: &Path) -> PathBuf {
@@ -43,20 +43,20 @@ pub fn sessions_dir(root: &Path) -> PathBuf {
 #[derive(Debug, Clone)]
 pub struct Layout {
     pub root: PathBuf,
-    pub angela: PathBuf,
+    pub caper: PathBuf,
     pub agents: PathBuf,
     pub sessions: PathBuf,
 }
 
-/// Ensure `.angela/{agents,sessions}` exist.
+/// Ensure `.caper/{agents,sessions}` exist.
 pub fn ensure_angela_layout(root: &Path) -> io::Result<Layout> {
     let layout = Layout {
         root: root.to_path_buf(),
-        angela: angela_dir(root),
+        caper: angela_dir(root),
         agents: agents_dir(root),
         sessions: sessions_dir(root),
     };
-    for d in [&layout.angela, &layout.agents, &layout.sessions] {
+    for d in [&layout.caper, &layout.agents, &layout.sessions] {
         if !d.exists() {
             std::fs::create_dir_all(d)?;
         }
@@ -91,7 +91,7 @@ mod tests {
     #[test]
     fn search_order_puts_the_angela_dir_first() {
         let dirs = agent_search_dirs(Path::new("/p"));
-        assert_eq!(dirs[0], PathBuf::from("/p/.angela/agents"));
+        assert_eq!(dirs[0], PathBuf::from("/p/.caper/agents"));
         assert_eq!(dirs[1], PathBuf::from("/p/agents"));
         assert_eq!(dirs[2], PathBuf::from("/p"));
     }

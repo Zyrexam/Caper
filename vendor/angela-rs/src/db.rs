@@ -1,4 +1,4 @@
-//! `.angela/conversations.db` — the SQLite schema and how it gets opened.
+//! `.caper/conversations.db` — the SQLite schema and how it gets opened.
 //!
 //! One file per project root replaces the per-session `<id>.json` header and
 //! `<id>.jsonl` log. The reason is not tidiness: the conversation stops being
@@ -134,7 +134,7 @@ CREATE TABLE IF NOT EXISTS settings (
 );
 
 -- Agent definitions. Formerly one `<name>.json` per agent under
--- `.angela/agents/`; now rows, so the UI can create and edit them without a
+-- `.caper/agents/`; now rows, so the UI can create and edit them without a
 -- file-write round trip and without two readers disagreeing about what an
 -- agent is.
 --
@@ -189,7 +189,7 @@ CREATE TABLE IF NOT EXISTS participants (
     kind            TEXT NOT NULL,              -- 'user' | 'agent'
     handle          TEXT NOT NULL,              -- the @handle in flattened prompts
     display_name    TEXT,
-    agent_name      TEXT,                       -- .angela/agents/<name>.json
+    agent_name      TEXT,                       -- .caper/agents/<name>.json
     model           TEXT,
     system_prompt   TEXT NOT NULL DEFAULT '',
     avatar          TEXT,
@@ -420,9 +420,9 @@ CREATE INDEX IF NOT EXISTS idx_participants_conv    ON participants(conversation
 CREATE INDEX IF NOT EXISTS idx_agents_name          ON agents(name);
 "#;
 
-/// `<root>/.angela/conversations.db`.
+/// `<root>/.caper/conversations.db`.
 pub fn db_path(root: impl AsRef<Path>) -> PathBuf {
-    root.as_ref().join(".angela").join("conversations.db")
+    root.as_ref().join(".caper").join("conversations.db")
 }
 
 /// Open (creating if absent) and bring the schema up to date.

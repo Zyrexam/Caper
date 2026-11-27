@@ -3,7 +3,7 @@
 //!
 //! The JS loads `.coffee` / `.mjs` modules and calls them. Rust cannot
 //! execute those, so definitions become JSON at
-//! `.angela/agents/<name>.json`.
+//! `.caper/agents/<name>.json`.
 //!
 //! An audit of the real definitions (`gl1`, `blz`, `ada`) showed the
 //! CoffeeScript logic is almost entirely **environment-variable fallbacks** —
@@ -548,7 +548,7 @@ pub fn from_json(name_hint: &str, v: &Value, file: Option<String>) -> AgentDef {
 /// must live in a dedicated agents directory.
 fn agent_dirs(project_root: &Path) -> Vec<PathBuf> {
     vec![
-        crate::project::agents_dir(project_root), // .angela/agents
+        crate::project::agents_dir(project_root), // .caper/agents
         project_root.join("agents"),              // legacy/local convenience
     ]
 }

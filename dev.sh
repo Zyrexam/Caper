@@ -6,7 +6,7 @@
 #   ./dev.sh --rebuild       force a fresh wasm build on start
 #
 # The harness runs inside caper-server: there is no second daemon to start and
-# no port to coordinate. Its store is <ANGELA_ROOT>/.angela, defaulting to this
+# no port to coordinate. Its store is <CAPER_ROOT>/.caper, defaulting to this
 # directory.
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -14,7 +14,11 @@ cd "$(dirname "$0")"
 # Honour exported credentials first; read the project key without sourcing
 # arbitrary shell commands from the .env file.
 if [[ -z "${META_API_KEY:-}" && -z "${MUSE_API_KEY:-}" ]]; then
-  CAPER_ENV="${ANGELA_ROOT:-.}/.angela/.env"
+  CAPER_ENV="${CAPER_ROOT:-${ANGELA_ROOT:-.}}/.caper/.env"
+  LEGACY_CAPER_ENV="${ANGELA_ROOT:-.}/.angela/.env"
+  if [[ ! -r "$CAPER_ENV" && -r "$LEGACY_CAPER_ENV" ]]; then
+    CAPER_ENV="$LEGACY_CAPER_ENV"
+  fi
   if [[ -r "$CAPER_ENV" ]]; then
     while IFS= read -r line || [[ -n "$line" ]]; do
       line="${line#export }"

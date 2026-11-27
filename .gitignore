@@ -4,6 +4,8 @@ ui/pkg/
 .git/
 /tmp/
 
-# angela session store (durable chat sessions + inference logs)
+# Caper and vendor session stores
+.caper/
 .angela/
 .env
+archive/

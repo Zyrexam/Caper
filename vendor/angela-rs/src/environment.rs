@@ -64,6 +64,7 @@ pub fn ordinal(day: u32) -> &'static str {
 /// numeric offset, which is not what a person reads on a clock. The call is
 /// per-use, so a session running across a DST change says the right thing
 /// afterwards.
+#[cfg(unix)]
 fn local_parts(epoch: i64) -> Option<(libc::tm, String)> {
     let mut tm: libc::tm = unsafe { std::mem::zeroed() };
     // SAFETY: `localtime_r` fills the caller's `tm` and is the thread-safe
@@ -80,6 +81,18 @@ fn local_parts(epoch: i64) -> Option<(libc::tm, String)> {
             .into_owned()
     };
     Some((tm, zone))
+}
+
+/// Windows `tm` has no zone field, so the clock is local but unlabelled.
+#[cfg(windows)]
+fn local_parts(epoch: i64) -> Option<(libc::tm, String)> {
+    let mut tm: libc::tm = unsafe { std::mem::zeroed() };
+    // SAFETY: `localtime_s` fills the caller's `tm`; it returns 0 on success.
+    let err = unsafe { libc::localtime_s(&mut tm, &epoch as *const i64) };
+    if err != 0 {
+        return None;
+    }
+    Some((tm, String::new()))
 }
 
 /// `Sat, Nov 14th, 2026 @ 5:37PM MST`
@@ -121,8 +134,9 @@ pub fn now_epoch() -> i64 {
 /// writes them (`2026-11-14T23:50:35.333Z`).
 ///
 /// Hand-parsed rather than pulling in a date library: the input is one fixed
-/// shape this codebase produces itself, and `timegm` does the calendar
-/// arithmetic. Returns `None` on anything that does not match, so a
+/// shape this codebase produces itself. `days_from_civil` does the calendar
+/// arithmetic in pure Rust, so this compiles on Windows too (`timegm` does
+/// not exist there). Returns `None` on anything that does not match, so a
 /// malformed timestamp loses its clock rather than its line.
 pub fn epoch_from_iso(iso: &str) -> Option<i64> {
     let b = iso.as_bytes();
@@ -130,16 +144,29 @@ pub fn epoch_from_iso(iso: &str) -> Option<i64> {
         return None;
     }
     let num = |from: usize, to: usize| iso.get(from..to)?.parse::<i32>().ok();
-    let mut tm: libc::tm = unsafe { std::mem::zeroed() };
-    tm.tm_year = num(0, 4)? - 1900;
-    tm.tm_mon = num(5, 7)? - 1;
-    tm.tm_mday = num(8, 10)?;
-    tm.tm_hour = num(11, 13)?;
-    tm.tm_min = num(14, 16)?;
-    tm.tm_sec = num(17, 19)?;
-    // SAFETY: `timegm` reads the struct we just filled. It is UTC-based,
-    // which is what the stored timestamp is.
-    Some(unsafe { libc::timegm(&mut tm) })
+    let (year, month, day) = (num(0, 4)?, num(5, 7)?, num(8, 10)?);
+    let (hour, min, sec) = (num(11, 13)?, num(14, 16)?, num(17, 19)?);
+    if !(1..=12).contains(&month)
+        || !(1..=31).contains(&day)
+        || !(0..=23).contains(&hour)
+        || !(0..=59).contains(&min)
+        || !(0..=60).contains(&sec)
+    {
+        return None;
+    }
+    Some(days_from_civil(year, month, day) * 86_400 + (hour * 3_600 + min * 60 + sec) as i64)
+}
+
+/// Days since 1970-01-01 for a proleptic Gregorian date, after Howard
+/// Hinnant's `days_from_civil`.
+fn days_from_civil(year: i32, month: i32, day: i32) -> i64 {
+    let year = (year - if month <= 2 { 1 } else { 0 }) as i64;
+    let era = if year >= 0 { year } else { year - 399 } / 400;
+    let year_of_era = year - era * 400;
+    let month_prime = ((month + 9) % 12) as i64;
+    let day_of_year = (153 * month_prime + 2) / 5 + day as i64 - 1;
+    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
+    era * 146_097 + day_of_era - 719_468
 }
 
 /// `14:00` — the local wall clock, 24-hour.
@@ -242,30 +269,36 @@ mod tests {
 
     /// Build an epoch for a given local wall-clock time, so the assertions
     /// below are about formatting rather than about this machine's zone.
+    /// `mktime` is Unix-only in the `libc` crate, so this converts through
+    /// the same `local_parts` the formatter uses.
     fn epoch_for(y: i32, mon: i32, day: i32, hour: i32, min: i32) -> i64 {
-        let mut tm: libc::tm = unsafe { std::mem::zeroed() };
-        tm.tm_year = y - 1900;
-        tm.tm_mon = mon - 1;
-        tm.tm_mday = day;
-        tm.tm_hour = hour;
-        tm.tm_min = min;
-        tm.tm_isdst = -1;
-        unsafe { libc::mktime(&mut tm) }
+        let naive = days_from_civil(y, mon, day) * 86_400 + (hour * 3_600 + min * 60) as i64;
+        match local_parts(naive) {
+            Some((tm, _)) => {
+                let seen = days_from_civil(tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday) * 86_400
+                    + (tm.tm_hour * 3_600 + tm.tm_min * 60 + tm.tm_sec) as i64;
+                naive - (seen - naive)
+            }
+            None => naive,
+        }
     }
 
     #[test]
     fn the_long_form_reads_like_a_clock() {
         let t = long_time(epoch_for(2026, 11, 14, 17, 37));
         // Sat, Nov 14th, 2026 @ 5:37PM <zone>
-        assert!(t.starts_with("Sat, Nov 14th, 2026 @ 5:37PM "), "{t}");
+        assert!(t.starts_with("Sat, Nov 14th, 2026 @ 5:37PM"), "{t}");
         // The zone abbreviation, not a numeric offset — that is the whole
-        // reason this uses `localtime_r` rather than a date library.
-        let zone = t.rsplit(' ').next().unwrap();
-        assert!(!zone.is_empty());
-        assert!(
-            zone.chars().all(|c| c.is_ascii_alphabetic()),
-            "expected an abbreviation like MST, got {zone:?}"
-        );
+        // reason this uses `localtime_r` rather than a date library. Windows
+        // has no zone field, so the suffix is simply absent there.
+        let rest = t.strip_prefix("Sat, Nov 14th, 2026 @ 5:37PM").unwrap();
+        if !rest.is_empty() {
+            let zone = rest.trim();
+            assert!(
+                zone.chars().all(|c| c.is_ascii_alphabetic()),
+                "expected an abbreviation like MST, got {zone:?}"
+            );
+        }
     }
 
     #[test]
@@ -359,11 +392,10 @@ mod tests {
         assert_eq!(b - a, 60);
         let day = epoch_from_iso("2026-11-14T21:00:00.000Z").unwrap();
         assert_eq!(day - a, 86_400);
-        // It is UTC in: the same wall-clock string is the same instant
-        // wherever this runs.
-        let mut tm: libc::tm = unsafe { std::mem::zeroed() };
-        unsafe { libc::gmtime_r(&a as *const i64, &mut tm) };
-        assert_eq!((tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour), (2026, 11, 13, 21));
+        // An independent anchor: the epoch itself and a known instant, so the
+        // parser is checked against the calendar, not only against itself.
+        assert_eq!(epoch_from_iso("1970-01-01T00:00:00.000Z"), Some(0));
+        assert_eq!(epoch_from_iso("2000-03-01T00:00:00.000Z"), Some(951_868_800));
         // Malformed input loses its clock, not its line.
         for bad in ["", "yesterday", "2026-11-13", "2026/11/13T21:00:00Z"] {
             assert!(epoch_from_iso(bad).is_none(), "{bad}");

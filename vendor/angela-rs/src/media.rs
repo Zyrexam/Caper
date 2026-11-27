@@ -7,7 +7,7 @@
 //! real `image_url` content part (a base64 data URL, the shape every
 //! OpenAI-compatible endpoint — llama-server included — accepts).
 //!
-//! Where the bytes live is chat's media folder (`<project_root>/.angela/media`,
+//! Where the bytes live is chat's media folder (`<project_root>/.caper/media`,
 //! the `POST /api/upload` destination); the ref is just its file name.
 
 use std::path::Path;
@@ -32,7 +32,7 @@ pub fn with_images(project_root: &Path, msg: Message) -> Message {
     if !text.contains("![") {
         return msg;
     }
-    let media_root = project_root.join(".angela").join("media");
+    let media_root = project_root.join(".caper").join("media");
     let mut parts: Vec<Value> = Vec::new();
     let mut clean = String::with_capacity(text.len());
     let mut rest = text.as_str();
@@ -136,7 +136,7 @@ mod tests {
                 .unwrap()
                 .as_nanos()
         ));
-        let media = dir.join(".angela").join("media");
+        let media = dir.join(".caper").join("media");
         std::fs::create_dir_all(&media).unwrap();
         std::fs::write(media.join("pic.png"), b"PNGDATA").unwrap();
 

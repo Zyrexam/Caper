@@ -1408,7 +1408,7 @@ mod tests {
             panic!("set SBOX_TEST_ID to a ready sandbox");
         };
         let names: Vec<String> = ["file-io", "term-local"].iter().map(|s| s.to_string()).collect();
-        let root = std::env::var("ANGELA_ROOT").unwrap_or_else(|_| "/workspace/psicom/chat".into());
+        let root = std::env::var("CAPER_ROOT").unwrap_or_else(|_| "/workspace/psicom/chat".into());
         let pool = McpPool::default();
 
         let (plain, _) = pool.ensure(&names, std::path::Path::new(&root));

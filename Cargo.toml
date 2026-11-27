@@ -7,10 +7,7 @@ exclude = ["vendor"]
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
-license = "MIT"
 
-# The wasm frontend's profile. It has to exist at THIS workspace root because
-# the dev server builds the wasm half from here.
 [profile.wasm]
 inherits = "release"
 opt-level = "s"

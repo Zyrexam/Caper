@@ -69,7 +69,10 @@ route: a brick with no page is a brick nobody can find.
 
 - Frontend: Rust → wasm. Needs the `wasm32-unknown-unknown` target and the
   pinned `wasm-bindgen` CLI; `dev.sh` adds or installs either if missing.
+  On Windows use `dev.ps1`, which does the same and runs the binary directly.
 - The kit lives at `vendor/rustex1` as a real directory, not a symlink.
+- The model layer is `vendor/agl-rs`, from the `rust` branch of the same
+  upstream repo as the harness.
 - Prefer **blaze** when it is on `PATH`, cargo otherwise. After a big
   structural change, a wild crash in safe code is suspect stale incremental
   state first: wipe the cache, rebuild, then read stack traces.

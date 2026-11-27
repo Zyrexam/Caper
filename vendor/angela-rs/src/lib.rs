@@ -20,7 +20,7 @@
 //! | `src/mcp-*.mjs` | [`mcp`] | ported |
 //!
 //! Beyond the port, storage moved from the per-session `.json`/`.jsonl` pair
-//! to a single `.angela/conversations.db`, which is what makes three things
+//! to a single `.caper/conversations.db`, which is what makes three things
 //! possible that a flat log cannot express:
 //!
 //! | module | what it adds |

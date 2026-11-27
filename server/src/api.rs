@@ -16,12 +16,32 @@ use angela::serve::{AppState, Server as AngelaServer};
 use rustex1_devserver::{Request, State, Stream};
 use serde_json::Value;
 
-/// Where sessions live. `ANGELA_ROOT` overrides; otherwise the directory the
-/// server was started from, which is the chat project itself.
+/// Where sessions live. `CAPER_ROOT` overrides; legacy `CAPER_ROOT` remains
+/// legacy `ANGELA_ROOT` remains supported; otherwise the server directory is
+/// the project root.
 pub fn project_root() -> std::path::PathBuf {
+    if let Ok(v) = std::env::var("CAPER_ROOT") {
+        if !v.trim().is_empty() {
+            return std::path::PathBuf::from(v.trim());
+        }
+    }
     match std::env::var("ANGELA_ROOT") {
         Ok(v) if !v.trim().is_empty() => std::path::PathBuf::from(v.trim()),
         _ => std::env::current_dir().unwrap_or_else(|_| ".".into()),
+    }
+}
+
+fn migrate_legacy_store(root: &std::path::Path) {
+    let legacy = root.join(".angela");
+    let current = root.join(".caper");
+    if legacy.is_dir() && !current.exists() {
+        if let Err(error) = std::fs::rename(&legacy, &current) {
+            eprintln!(
+                "Caper: could not migrate legacy store {} to {}: {error}",
+                legacy.display(),
+                current.display()
+            );
+        }
     }
 }
 
@@ -32,6 +52,7 @@ pub(crate) fn angela(port: u16) -> &'static AngelaServer {
     static SERVER: OnceLock<AngelaServer> = OnceLock::new();
     SERVER.get_or_init(|| {
         let root = project_root();
+        migrate_legacy_store(&root);
         // The reported port is this server's: embedded angela has no port of
         // its own, and `/api/health` saying 0 would just be a lie.
         let mut state = AppState::new(&root, port).expect("angela state");
@@ -55,7 +76,7 @@ pub(crate) fn angela(port: u16) -> &'static AngelaServer {
             root: root.clone(),
         }));
         eprintln!(
-            "angela embedded · conversations in {}/.angela/conversations.db",
+            "angela embedded · conversations in {}/.caper/conversations.db",
             root.display()
         );
         AngelaServer::new(Arc::new(state))
@@ -226,7 +247,7 @@ impl<'s, 'a> ResponseSink for DevSink<'s, 'a> {
 /// Current model configuration, shared by the on-demand endpoint and event feed.
 pub fn models() -> Value {
     let cfg = agl::config::read_user_config();
-    let default = cfg.get("default_model").and_then(|v| v.to_scalar_string()).unwrap_or_default();
+    let mut default = cfg.get("default_model").and_then(|v| v.to_scalar_string()).unwrap_or_default();
     let mut models = Vec::<String>::new();
     if let Some(providers) = cfg.get("context_windows").and_then(|v| v.as_map()) {
         for (provider, entries) in providers {
@@ -237,6 +258,20 @@ pub fn models() -> Value {
             }
         }
         }
+    }
+    // Free models live behind the OpenCode client; the CLI lists what the
+    // installed version can actually reach.
+    for name in agl::opencode::models() {
+        let id = format!("opencode:{name}");
+        if !models.contains(&id) { models.push(id); }
+    }
+    if default.is_empty() {
+        default = models
+            .iter()
+            .find(|m| m.ends_with(":deepseek-v4.1-flash-free"))
+            .or_else(|| models.first())
+            .cloned()
+            .unwrap_or_default();
     }
     if !default.is_empty() && !models.contains(&default) { models.push(default.clone()); }
     serde_json::json!({"default_model": default, "models": models})
@@ -249,7 +284,7 @@ pub fn models() -> Value {
 /// `contextWindow`.
 pub(crate) fn sessions(port: u16) -> Value {
     let mut data = angela(port).sessions_list_for_test();
-    let path = project_root().join(".angela").join("conversations.db");
+    let path = project_root().join(".caper").join("conversations.db");
     if let Ok(conn) = rusqlite::Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY) {
         add_latest_events(&mut data, &conn);
         add_token_counts(&mut data, &conn);
@@ -814,7 +849,7 @@ pub fn handle_api(state: &Arc<State>, req: &Request, out: &mut Stream<'_>) {
 
     // ---- media (PLAN44 A5): text and images only -----------------------
     if req.path == "/api/upload" && req.method == "POST" {
-        // Raw bytes, name in the query, kept under `.angela/media`. The
+        // Raw bytes, name in the query, kept under `.caper/media`. The
         // extension allowlist is the whole content policy.
         let name = query_str(req, "name");
         let ext = name.rsplit('.').next().unwrap_or("").to_lowercase();
@@ -830,7 +865,7 @@ pub fn handle_api(state: &Arc<State>, req: &Request, out: &mut Stream<'_>) {
             .unwrap_or_default()
             .as_nanos();
         let file = format!("{nanos:x}.{ext}");
-        let dir = project_root().join(".angela").join("media");
+        let dir = project_root().join(".caper").join("media");
         let _ = std::fs::create_dir_all(&dir);
         match std::fs::write(dir.join(&file), &req.body) {
             Ok(()) => {
@@ -844,7 +879,7 @@ pub fn handle_api(state: &Arc<State>, req: &Request, out: &mut Stream<'_>) {
     }
     if req.method == "GET" && req.path.starts_with("/media/") {
         let f = req.path.trim_start_matches("/media/");
-        let path = project_root().join(".angela").join("media").join(f);
+        let path = project_root().join(".caper").join("media").join(f);
         // One directory, no separators: the name is ours, not the caller's.
         let safe = !f.is_empty() && !f.contains('/') && !f.contains('\\') && !f.contains("..");
         let bytes = if safe { std::fs::read(&path).ok() } else { None };
@@ -957,7 +992,7 @@ pub fn handle_api(state: &Arc<State>, req: &Request, out: &mut Stream<'_>) {
             return;
         }
         let result = crate::events::if_session_idle(id, || {
-            let path = project_root().join(".angela").join("conversations.db");
+            let path = project_root().join(".caper").join("conversations.db");
             let db = rusqlite::Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE)?;
             db.busy_timeout(std::time::Duration::from_secs(2))?;
             delete_empty_session(&db, id)

@@ -36,7 +36,7 @@ fn now_ms() -> u64 {
 }
 
 fn registry_path(root: &Path) -> std::path::PathBuf {
-    root.join(".angela").join("automations.json")
+    root.join(".caper").join("automations.json")
 }
 
 /// Read the registry, or an empty one. A corrupt file reads as empty rather
@@ -586,7 +586,7 @@ mod tests {
     #[test]
     fn registry_roundtrip() {
         let root = std::env::temp_dir().join(format!("chat-automation-test-{}", now_ms()));
-        let _ = std::fs::create_dir_all(root.join(".angela"));
+        let _ = std::fs::create_dir_all(root.join(".caper"));
         let id = upsert(
             &root,
             &json!({ "name": "triage", "cron": "0 9 * * 1-5", "prompt": "hi",
@@ -635,7 +635,7 @@ mod tests {
     #[test]
     fn catch_up_flag_roundtrips_through_the_registry() {
         let root = std::env::temp_dir().join(format!("chat-automation-test-catchup-{}", now_ms()));
-        let _ = std::fs::create_dir_all(root.join(".angela"));
+        let _ = std::fs::create_dir_all(root.join(".caper"));
         let id = upsert(
             &root,
             &json!({ "name": "triage", "cron": "0 9 * * *", "prompt": "hi",

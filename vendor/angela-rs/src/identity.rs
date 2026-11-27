@@ -94,10 +94,10 @@ fn now_ms() -> i64 {
 /// unguessable; there is no seeding mistake to make here.
 fn random_token() -> String {
     let mut buf = [0u8; 32];
-    if let Ok(mut f) = std::fs::File::open("/dev/urandom") {
-        use std::io::Read;
-        let _ = f.read_exact(&mut buf);
-    }
+    // The OS RNG on every platform: `/dev/urandom` does not exist on Windows,
+    // where the old fallback silently produced 32 zero bytes and made every
+    // device token identical.
+    getrandom::getrandom(&mut buf).expect("the OS must provide randomness");
     buf.iter().map(|b| format!("{b:02x}")).collect()
 }
 

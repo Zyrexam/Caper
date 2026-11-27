@@ -2,7 +2,6 @@
 name = "caper-app"
 version.workspace = true
 edition.workspace = true
-license.workspace = true
 description = "caper frontend - agentic chat UI in Rust -> wasm"
 
 [lib]

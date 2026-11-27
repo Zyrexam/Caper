@@ -4,7 +4,7 @@
 //! angela runs **inside this process** (`mod api`): sessions, the chat NDJSON
 //! stream and the agl turn loop are all served from here. The chat app is one
 //! server — there is no second daemon to start and no port to coordinate.
-//! Sessions live under `<cwd>/.angela/sessions`, or `ANGELA_ROOT` if set.
+//! Sessions live under `<cwd>/.caper/sessions`, or `CAPER_ROOT` if set.
 
 mod api;
 mod assistant_text;

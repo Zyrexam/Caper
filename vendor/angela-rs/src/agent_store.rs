@@ -1,6 +1,6 @@
 //! Agents as rows.
 //!
-//! An agent used to be a `<name>.json` under `.angela/agents/`. That was the
+//! An agent used to be a `<name>.json` under `.caper/agents/`. That was the
 //! right shape when agents were written by hand in an editor and read once at
 //! startup; it is the wrong one now that the UI creates and edits them, where
 //! a file store means a read-modify-write race, a second reader that can
@@ -424,7 +424,7 @@ impl<'a> AgentStore<'a> {
         });
     }
 
-    /// Bring `.angela/agents/*.json` in — **once per project, ever**.
+    /// Bring `.caper/agents/*.json` in — **once per project, ever**.
     ///
     /// "Once" is recorded in `schema_meta`, not inferred from whether each
     /// name is present. Skipping per name looks the same on a fresh start
@@ -686,7 +686,7 @@ mod tests {
     #[test]
     fn a_deleted_agent_stays_deleted_across_restarts() {
         let dir = tempfile::tempdir().unwrap();
-        let agents = dir.path().join(".angela").join("agents");
+        let agents = dir.path().join(".caper").join("agents");
         std::fs::create_dir_all(&agents).unwrap();
         std::fs::write(agents.join("default.json"), r#"{"description":"the shipped one"}"#)
             .unwrap();
@@ -710,7 +710,7 @@ mod tests {
     #[test]
     fn an_install_that_already_has_agents_is_not_imported_over() {
         let dir = tempfile::tempdir().unwrap();
-        let agents = dir.path().join(".angela").join("agents");
+        let agents = dir.path().join(".caper").join("agents");
         std::fs::create_dir_all(&agents).unwrap();
         std::fs::write(agents.join("default.json"), r#"{"description":"the shipped one"}"#)
             .unwrap();
@@ -757,7 +757,7 @@ mod tests {
     #[test]
     fn files_are_imported_once_and_read_in_full() {
         let dir = tempfile::tempdir().unwrap();
-        let agents = dir.path().join(".angela").join("agents");
+        let agents = dir.path().join(".caper").join("agents");
         std::fs::create_dir_all(&agents).unwrap();
         std::fs::write(
             agents.join("filey.json"),

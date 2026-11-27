@@ -18,23 +18,18 @@
    override would leak the charcoal theme onto the chat view) */
 #sb,
 #home {
-  /* Three-step neutral ramp. The base is the page itself (the rail is
-     part of it, with no surface of its own); --panel is the content
-     column's card; --panel-2 is anything raised ON that card (message
-     cards, the composer envelope, inputs, menus). Pure neutral greys —
-     no blue cast. */
-  --bg: #080808;
-  --panel: #161616;
-  --panel-2: #242424;
-  --line: #1e1e1e;
-  --line-2: #2e2e2e;
-  --border: #272727;
-  --text: #f1f3f6;
-  --muted: #8e94a2;
+  /* Caper's balanced navy, indigo, and soft violet ramp. */
+  --bg: #0d1224;
+  --panel: #151b31;
+  --panel-2: #202744;
+  --line: #303958;
+  --line-2: #394263;
+  --border: #303958;
+  --text: #edf0f7;
+  --muted: #9ba6c3;
 
-  /* indigo - the only cool accent */
-  --accent: #7c7ef8;
-  --accent-soft: #a9accf;
+  --accent: #7c8cf8;
+  --accent-soft: #b39aef;
   --accent-tint: color-mix(in srgb, var(--accent) 10%, transparent);
   --accent-glow: color-mix(in srgb, var(--accent) 6%, transparent);
 

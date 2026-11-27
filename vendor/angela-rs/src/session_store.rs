@@ -1,5 +1,5 @@
 //! Port of `angela/src/session-store.mjs` — durable sessions under
-//! `.angela/sessions/`.
+//! `.caper/sessions/`.
 //!
 //! Two files per session:
 //!
@@ -256,7 +256,7 @@ pub struct NewSession {
     pub overrides: Option<Value>,
 }
 
-/// Durable sessions under `<root>/.angela/sessions`.
+/// Durable sessions under `<root>/.caper/sessions`.
 pub struct SessionStore {
     pub project_root: PathBuf,
     pub dir: PathBuf,

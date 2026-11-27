@@ -16,7 +16,7 @@ fn fixture_root() -> std::path::PathBuf {
 #[test]
 fn the_rust_store_reads_a_js_written_session() {
     let root = fixture_root();
-    if !root.join(".angela/sessions").is_dir() {
+    if !root.join(".caper/sessions").is_dir() {
         eprintln!("fixture missing; skipping (see tests/fixtures/REGENERATE.md)");
         return;
     }
@@ -80,13 +80,13 @@ fn the_rust_store_reads_a_js_written_session() {
 fn rust_appends_to_a_js_session_without_breaking_it() {
     // Copy the fixture so the test never mutates it.
     let src = fixture_root();
-    if !src.join(".angela/sessions").is_dir() {
+    if !src.join(".caper/sessions").is_dir() {
         return;
     }
     let tmp = tempfile::tempdir().unwrap();
-    let dst = tmp.path().join(".angela/sessions");
+    let dst = tmp.path().join(".caper/sessions");
     std::fs::create_dir_all(&dst).unwrap();
-    for e in std::fs::read_dir(src.join(".angela/sessions")).unwrap() {
+    for e in std::fs::read_dir(src.join(".caper/sessions")).unwrap() {
         let e = e.unwrap();
         std::fs::copy(e.path(), dst.join(e.file_name())).unwrap();
     }
@@ -179,7 +179,7 @@ fn list_visible_context_messages_matches_the_js_output() {
 #[test]
 fn the_serve_layer_reconstructs_js_written_sessions() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/js-items");
-    if !root.join(".angela/sessions").is_dir() {
+    if !root.join(".caper/sessions").is_dir() {
         return;
     }
     let store = SessionStore::new(&root).unwrap();

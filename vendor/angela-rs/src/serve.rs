@@ -109,7 +109,7 @@ impl AppState {
         for f in &report.failed {
             eprintln!("angela: import failed — {f}");
         }
-        // Agents moved from `.angela/agents/*.json` into the database. The
+        // Agents moved from `.caper/agents/*.json` into the database. The
         // files are imported once and then neither read nor written — they
         // stay on disk as the rollback, exactly like the session files.
         let imported = store.agents().import_files(&root);

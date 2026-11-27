@@ -20,11 +20,11 @@ surprise and records why, rather than quietly "fixing" it.
 
 | Module | From | Notes |
 |---|---|---|
-| `src/project.rs` | `project.mjs` | Project root, `.angela/{agents,sessions}` layout, agent search order. |
+| `src/project.rs` | `project.mjs` | Project root, `.caper/{agents,sessions}` layout, agent search order. |
 | `src/http.rs` | (new) | A deliberately small HTTP/1.1 server: `std::net` + a thread per connection, no framework. Chunked streaming, because the chat endpoint must emit cards as the model produces them. No keep-alive, HTTP/2, TLS or compression — angela uses none of them. |
 | `src/mcp.rs` | `mcp-client.mjs` | JSON-RPC over a child process's stdio, both framings (newline for the file-io kit, LSP `Content-Length` for the official SDK). Reader thread + channels, since the turn loop is blocking. The MCP **servers are not ported** — they run as-is from `/workspace/mcp/*`. |
 | `src/mcp_presets.rs` | `mcp-presets.mjs` | The two local presets, `file-io` and `term-local`, jailed to the project root. Tool names are prefixed `file_io__read_file` so two servers cannot collide and existing `allowlist` entries carry over. |
-| `src/agent_loader.rs` | `agent-loader.mjs` | Declarative **JSON** definitions in `.angela/agents/<name>.json`, with defaults, `toolsEnabled` / `allowlist` as array-or-multiline-string, and `${VAR}` / `${VAR:-fallback}` interpolation. |
+| `src/agent_loader.rs` | `agent-loader.mjs` | Declarative **JSON** definitions in `.caper/agents/<name>.json`, with defaults, `toolsEnabled` / `allowlist` as array-or-multiline-string, and `${VAR}` / `${VAR:-fallback}` interpolation. |
 | `src/allowlist.rs` | `allowlist.mjs` | Deny-by-default tool gate, with the small case-insensitive anchored regex engine (`.` `*` `+` `?` `[]` `{m,n}` `\b`) ported atom for atom. Checked against the JS by a differential test. |
 | `src/harness.rs` | `index.mjs` (turn loop) | Resolve/create the tab's session, title it from the first user message, persist the prompt **before** inference, hydrate the agent from the log, stream deltas, persist reasoning + reply, record the turn. |
 | `src/serve.rs` | `serve.mjs` (partial) | `/api/health`, `/api/agents`, `/api/sessions` (list + clean), `/api/sessions/:id` (get + delete), `/api/session/new`, and `reconstruct_messages_from_log` — the UI transcript shape. Unported routes answer **501 with the route name**, so the UI sees a clear signal instead of a 404 it would read as a routing bug. |
