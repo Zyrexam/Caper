@@ -22,9 +22,9 @@ pub const CSS: &str = r#"
 :is(#sb, #home) .ident-btn:hover { background: var(--panel-2); }
 :is(#sb, #home) .ident-avatar {
   position: relative; width: 22px; height: 22px; flex: none;
-  border-radius: 99px; background: var(--accent-soft, var(--panel-2));
+  border-radius: 99px; background: var(--accent-user);
   display: inline-flex; align-items: center; justify-content: center;
-  font: 600 10px/1 var(--sans); color: var(--accent);
+  font: 600 10px/1 var(--sans); color: var(--bg);
 }
 :is(#sb, #home) .ident-dot {
   position: absolute; right: -1px; bottom: -1px; width: 8px; height: 8px;

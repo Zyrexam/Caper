@@ -100,7 +100,7 @@ pub fn parts(st: &str, v: &str) -> Vec<Node> {
                     ),
                 ),
                 m("span").text(&format!(
-                    "({v}.status === 'always' ? 'Allowed — and added to this session\\'s rules' \
+                    "({v}.status === 'always' ? 'Allowed and added to this session\\'s rules' \
                       : {v}.status === 'allow' ? 'Allowed once' : 'Denied')"
                 )),
             ]),

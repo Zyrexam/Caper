@@ -21,21 +21,20 @@ pub const CSS: &str = r#"
 
 #home {
   display: grid;
-  grid-template-columns: 300px 1fr 320px;
+  grid-template-columns: auto 1fr auto;
   height: 100vh;
   height: 100dvh;
   min-height: 0;
   background: var(--bg);
   color: var(--text);
   font-family: var(--sans, ui-sans-serif, system-ui, sans-serif);
-  transition: grid-template-columns .3s ease-in-out;
 }
 
-#home.aside-collapsed { grid-template-columns: 300px 1fr 0px; }
+#home.aside-collapsed { grid-template-columns: auto 1fr 0px; }
 #home.aside-collapsed .home-aside { display: none; }
-#home.rail-collapsed { grid-template-columns: 0px 1fr 320px; }
+#home.rail-collapsed { grid-template-columns: 0px 1fr auto; }
 #home.rail-collapsed .home-rail { display: none; }
-#home.rail-collapsed .home-col { margin-left: 10px; }
+#home.rail-collapsed .home-col { margin-left: 8px; }
 #home.rail-collapsed.aside-collapsed { grid-template-columns: 0px 1fr 0px; }
 .home-rail { grid-column: 1; }
 
@@ -45,16 +44,21 @@ pub const CSS: &str = r#"
 .home-aside { grid-column: 3; }
 
 
+/* shortcut: resized widths reset on reload; persist them in the home store
+   when that starts to annoy. Limits are the min/max below. */
 .home-rail {
-  min-width: 0;
+  width: 264px;
+  min-width: 216px;
+  max-width: 420px;
   min-height: 0;
   display: flex;
   flex-direction: column;
   gap: var(--group-gap);
   overflow: hidden;
-  padding: 10px 0 10px 4px;
+  resize: horizontal;
+  padding: 8px 0 8px 4px;
 
-  margin-right: 10px;
+  margin-right: 8px;
 }
 .home-rail-content {
   flex: 1 1 auto;
@@ -76,7 +80,7 @@ pub const CSS: &str = r#"
   min-height: 0;
   display: flex;
   flex-direction: column;
-  margin-right: 10px;
+  margin-right: 8px;
 }
 
 /* the tab strip: on the black page, ABOVE the card it labels. A row now:
@@ -85,7 +89,7 @@ pub const CSS: &str = r#"
 .home-tabs {
   flex: 0 0 auto;
   display: flex; align-items: center; gap: 6px;
-  padding: 10px 2px 8px;
+  padding: 8px 2px 6px;
 }
 .home-tabs .tab-bar {
   flex: 1 1 auto; min-width: 0;
@@ -94,7 +98,7 @@ pub const CSS: &str = r#"
 
 .tabs-toggle {
   flex: 0 0 auto;
-  width: 30px; height: 30px;
+  width: 28px; height: 28px;
   display: inline-flex; align-items: center; justify-content: center;
   border: 1px solid transparent;
   border-radius: 7px;
@@ -115,14 +119,55 @@ pub const CSS: &str = r#"
   min-height: 0;
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: 12px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
 }
 
-.home-main { flex: 1 1 auto; margin-bottom: 10px; }
-.home-aside { margin: 10px 10px 10px 0; }
+.home-main { flex: 1 1 auto; margin-bottom: 8px; }
+.home-aside {
+  width: 288px;
+  min-width: 240px;
+  max-width: 520px;
+  resize: horizontal;
+  margin: 8px 8px 8px 0;
+}
+
+.home-empty {
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px;
+  text-align: center;
+}
+.home-empty-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+.home-empty-note {
+  margin: 0;
+  max-width: 320px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.home-empty-new {
+  margin-top: 6px;
+  padding: 8px 14px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--text);
+  color: var(--bg);
+  font: 600 13px/1 var(--sans);
+  cursor: pointer;
+  transition: background-color .13s;
+}
+.home-empty-new:hover { background: #fff; }
+.home-empty-new:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .home-main .mjs-chat { height: 100%; background: transparent; border-left: 0; }
 
@@ -142,7 +187,7 @@ pub const CSS: &str = r#"
   flex: 0 0 auto; display: flex; flex-direction: column;
   gap: 0; padding-top: 0;
 }
-.home-settings-row { display: flex; align-items: center; gap: 6px; }
+.home-settings-row { display: flex; align-items: center; gap: 6px; padding-right: 14px; }
 .home-settings-spacer { margin-left: auto; }
 
 
@@ -286,6 +331,25 @@ fn main_col() -> Node {
             .show("$store.live.tabs.length > 0")
             // guide mounts too — see that module for why the tree is not
             .child(session_panel::session_panel()),
+        m("section")
+            .class("home-main home-empty")
+            .show("$store.live.tabs.length === 0")
+            .kids(vec![
+                m("h1").class("home-empty-title").child(lit("No session open")),
+                m("p")
+                    .class("home-empty-note")
+                    .child(lit("Start a session to talk with an agent.")),
+                m("button")
+                    .class("home-empty-new")
+                    .attr("type", "button")
+                    .show("$store.ident.can('session.create')")
+                    .on("click", "$store.live.newSession()")
+                    .child(lit("New session")),
+                m("p")
+                    .class("home-empty-note")
+                    .show("!$store.ident.can('session.create')")
+                    .child(lit("Ask an admin for permission to start sessions.")),
+            ]),
     ])
 }
 

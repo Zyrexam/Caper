@@ -362,7 +362,7 @@ pub fn agent_editor() -> Node {
             field(
                 "Workspace root",
                 "file-io and the shell start here; blank = project root \
-                — host-only (no effect on sandboxes)",
+                (host-only, no effect on sandboxes)",
                 &format!("{ST}.draft.cwd"),
                 "/workspace/blz",
                 0,
@@ -383,7 +383,7 @@ pub fn agent_editor() -> Node {
             ),
             field(
                 "Allowlist",
-                "auto-approved tools, one per line — empty approves nothing",
+                "auto-approved tools, one per line. Empty approves nothing",
                 &format!("{ST}.draft.allowlist"),
                 "file_io__read_file",
                 4,

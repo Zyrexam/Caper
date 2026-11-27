@@ -4,10 +4,10 @@ use rustex1_kit::h::{m, Node};
 use crate::components::rail_head;
 use crate::css;
 
-pub const DEFAULT_ACCENT: &str = "#a78bfa";
+pub const DEFAULT_ACCENT: &str = "#2563eb";
 
 pub const USER_ICON: &str = "user";
-pub const USER_ACCENT: &str = "#aaaaaa";
+pub const USER_ACCENT: &str = "#d97706";
 pub fn user_name(st: &str) -> String { format!("({st}.userName || 'You')") }
 
 pub const CSS: &str = r#"

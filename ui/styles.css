@@ -1,30 +1,50 @@
 /* chat shell — the demo IS the app (parity with m-js-cmp-chat/demo/index.html).
-   Theme tokens match the demo :root exactly; kit.css loads first so these
-   win. chat.css consumes them via var(--bg, #0f1419) etc.
-   --accent-2 / --bg-2 are NOT in the demo :root; they are set here to the
-   values the demo's fallback chains produce, so the kit skin (which defines
-   both: orange --accent-2, dark --bg-2) cannot leak in through
-   --mjs-accent-2 (active tab) and --mjs-tool (tool cards). */
+   These are the app's colour and type tokens; kit.css loads first so they win.
+   chat.css consumes them via var(--bg, ...) etc. */
 :root {
-  --bg: #0d1224;
-  --panel: #151b31;
-  --panel-2: #202744;
-  --border: #303958;
-  --text: #edf0f7;
-  --muted: #9ba6c3;
-  --accent: #7c8cf8;
-  --accent-2: #b39aef;
-  --bg-2: #242d4d;
-  --ok: #55c29a;
+  --bg: #0d0d0e;
+  --panel: #141416;
+  --panel-2: #1f1f23;
+  --bg-2: #27272b;
+  --border: #262629;
+  --line: #262629;
+  --line-2: #303034;
+  --text: #f4f4f6;
+  --muted: #a1a1aa;
+  /* #71717a is the spec value but reads 4.0:1 on the page and 3.4:1 on a
+     raised panel; lifted to the nearest step that clears 4.5:1 everywhere. */
+  --gray-dim: #8a8a93;
+
+  --accent: #4a86f7;
+  --accent-soft: #8ab4f8;
+  --accent-2: var(--accent-soft);
+  --accent-user: #d97706;
+  --accent-agent: #2563eb;
+  --accent-mention: #fbbf24;
+  --accent-tint: color-mix(in srgb, var(--accent) 12%, transparent);
+  --accent-glow: color-mix(in srgb, var(--accent) 7%, transparent);
+
+  --pastel-indigo: #b9bcd9;
+  --pastel-violet: #c9bde0;
+  --pastel-pink: #f0b8ce;
+  --pastel-amber: #f5d8a6;
+  --pastel-green: #a8e4b4;
+  --pastel-teal: #7dcfc1;
+  --pastel-cyan: #aecbe3;
+  --pastel-red: #f2adab;
+  --mjs-yellow: var(--pastel-amber);
+
+  --ok: #22c55e;
   --err: #ec7c86;
-  --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  --sans: ui-sans-serif, system-ui, sans-serif;
+  --mono: "SF Mono", SFMono-Regular, ui-monospace, Menlo, Consolas, monospace;
+  --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable Text",
+    "Segoe UI", system-ui, sans-serif;
 }
 * { box-sizing: border-box; }
 /* kit.css sets `html { font: 14px/... }`; the demo leaves html alone, so
    rem-based rules (.welcome h1, bubble widths) resolve against the 16px
    browser default. Restore that. */
-html { font-size: 16px; }
+html { font-size: 15px; -webkit-font-smoothing: antialiased; }
 html, body, #app { height: 100%; margin: 0; }
 body {
   background: var(--bg);
@@ -33,7 +53,7 @@ body {
   /* The demo sets no body type, so chat text inherits the 16px/normal
      browser default. Stated explicitly because kit.css says
      `html, body { font: 14px/1.55 ... }`, which would otherwise win. */
-  font-size: 16px;
+  font-size: 15px;
   line-height: normal;
   overflow: hidden;
 }

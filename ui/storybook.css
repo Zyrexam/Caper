@@ -2,7 +2,6 @@
    Storybook - global layer.
    Rules that apply to the storybook page as a whole or to rules
    shared by many components:
-     - the #sb-scoped token retint (charcoal over the app skin)
      - the two-column shell (#sb, .sb-content, .feature)
      - shared type tokens used by several components:
          .counter           (nav rail, item heads, demo)
@@ -13,40 +12,7 @@
    app/src/css.rs) and are injected into <head> at boot.
    ================================================================ */
 
-/* retint the app skin to neutral charcoal, scoped to the storybook shell
-   (not :root - the storybook is a route inside the app, so a global
-   override would leak the charcoal theme onto the chat view) */
-#sb,
-#home {
-  /* Caper's balanced navy, indigo, and soft violet ramp. */
-  --bg: #0d1224;
-  --panel: #151b31;
-  --panel-2: #202744;
-  --line: #303958;
-  --line-2: #394263;
-  --border: #303958;
-  --text: #edf0f7;
-  --muted: #9ba6c3;
-
-  --accent: #7c8cf8;
-  --accent-soft: #b39aef;
-  --accent-tint: color-mix(in srgb, var(--accent) 10%, transparent);
-  --accent-glow: color-mix(in srgb, var(--accent) 6%, transparent);
-
-  /* pastel family - soft, low-chroma, for non-semantic roles */
-  --pastel-indigo: #b9bcd9;
-  --pastel-violet: #c9bde0;
-  --pastel-pink: #f0b8ce;
-  --pastel-amber: #f5d8a6;
-  --pastel-green: #a8e4b4;
-  --pastel-teal: #7dcfc1;
-  --pastel-cyan: #aecbe3;
-  --pastel-red: #f2adab;
-  --mjs-yellow: var(--pastel-amber);
-
-  /* dim gray, near #666 - idle state + its symbol */
-  --gray-dim: #6e717a;
-}
+/* the app skin's tokens live in :root (styles.css); the guide inherits them */
 
 /* ---- shell ----
    The page is the black base; the rail sits directly on it with no

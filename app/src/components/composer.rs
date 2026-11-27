@@ -89,7 +89,8 @@ pub const CSS: &str = r#"
   align-items: center;
   gap: 6px;
 }
-.mjs-chat .btn-primary { background: var(--mjs-accent); color: #fff; border: 0; margin-left: auto; }
+.mjs-chat .btn-primary { background: var(--text); color: var(--bg); border: 0; margin-left: auto; }
+.mjs-chat .btn-primary:hover { background: #fff; }
 .mjs-chat .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
 .mjs-chat .btn-stop { background: #7f1d1d; color: #fecaca; border: 1px solid #991b1b; }
 
