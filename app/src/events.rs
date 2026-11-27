@@ -1,4 +1,3 @@
-//! Subscribe once per wasm boot. EventSource reconnects and receives a fresh snapshot.
 use rustex1_kit::{js, lifecycle};
 use wasm_bindgen::{prelude::*, JsCast};
 
@@ -31,7 +30,7 @@ fn session_delta(delta: &JsValue) {
         js::set(&next, "sessions", &rows.into());
         js::set(&next, "projectRoot", &js::get(delta, "projectRoot"));
         let next: JsValue = next.into();
-        *slot.borrow_mut() = next.clone();
+        *slot.borrow_mut = next.clone;
         crate::components::live::apply_sessions(next);
     });
 }
@@ -57,7 +56,7 @@ fn sandbox_delta(delta: &JsValue) {
         js::set(&next, "sandboxes", &rows.into());
         js::set(&next, "sboxUp", &js::get(delta, "sboxUp"));
         let next: JsValue = next.into();
-        *slot.borrow_mut() = next.clone();
+        *slot.borrow_mut = next.clone;
         crate::components::live::apply_sandboxes(&next);
     });
 }
@@ -85,7 +84,7 @@ fn approval_delta(delta: &JsValue) {
             }
         }
         let next: JsValue = next.into();
-        *slot.borrow_mut() = next.clone();
+        *slot.borrow_mut = next.clone;
         crate::components::live::apply_pending(next);
     });
 }

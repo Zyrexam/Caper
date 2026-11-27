@@ -1,4 +1,3 @@
-//! Global, two-step keyboard shortcuts for the session workspace.
 
 use std::cell::Cell;
 use std::rc::Rc;
@@ -43,7 +42,6 @@ pub fn start() {
     let token = lifecycle::token();
     let callback = Closure::wrap(Box::new(move |event: JsValue| {
         if !lifecycle::am_current_token(&token) { return; }
-        // Session actions belong to the workspace, not the component guide.
         if js::get_str(&js::get(&js::global(), "location"), "pathname") != "/" {
             state.set(false);
             return;

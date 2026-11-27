@@ -1,8 +1,3 @@
-//! `system card` — the app talking, not a participant.
-//!
-//! A slash command's answer, the server saying nobody is here to reply, a
-//! turn that was stopped. Deliberately not a bubble: it is not something
-//! anyone said.
 
 use rustex1_kit::h::{m, Node};
 use rustex1_kit::js;
@@ -27,8 +22,6 @@ pub const CSS: &str = r#"
 .system-demo .mjs-chat.mode-sidebar { border-left: 0; }
 "#;
 
-/// Split status text without treating email addresses as mentions. Handles use
-/// the same ASCII letters, digits and hyphens as the participant roster.
 fn mention_parts(text: &str) -> Vec<(bool, String)> {
     let mut parts = Vec::new();
     let mut start = 0;
@@ -51,7 +44,6 @@ fn mention_parts(text: &str) -> Vec<(bool, String)> {
     parts
 }
 
-/// Store method shared by the live transcript and the guide's samples.
 pub(crate) fn status_parts(_this: JsValue, args: js_sys::Array) -> JsValue {
     let parts = js_sys::Array::new();
     for (mention, text) in mention_parts(&js::arg_str(&args, 0)) {
@@ -63,7 +55,6 @@ pub(crate) fn status_parts(_this: JsValue, args: js_sys::Array) -> JsValue {
     parts.into()
 }
 
-/// What this kind contributes to a message block.
 pub fn parts(st: &str, v: &str) -> Vec<Node> {
     vec![m("div")
         .class("bubble-system")
@@ -83,7 +74,6 @@ pub fn parts(st: &str, v: &str) -> Vec<Node> {
         ])]
 }
 
-/// standalone demo — the card in the row the transcript draws it in.
 pub fn demo() -> Node {
     let (st, v) = (samples::EXPR, samples::row("system"));
     m("div").class("system-demo").child(

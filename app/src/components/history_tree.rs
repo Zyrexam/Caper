@@ -1,4 +1,3 @@
-//! The conversation's complete node tree, used to choose the write cursor.
 use std::collections::HashMap;
 use wasm_bindgen::JsValue;
 use rustex1_kit::h::{lit, m, Node};

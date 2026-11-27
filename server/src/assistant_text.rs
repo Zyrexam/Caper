@@ -1,4 +1,3 @@
-//! Remove transcript-style speaker prefixes at the chat boundary.
 use regex::Regex;
 use serde_json::{Value, json};
 use std::sync::OnceLock;
@@ -9,7 +8,6 @@ fn marker() -> &'static Regex {
 }
 
 // A marker can be split across arbitrarily many deltas. Delay only while the
-// current text could still become one, and cap the hold to avoid stalling.
 fn could_be_marker(s: &str) -> bool {
     if let Some(rest) = s.strip_prefix('[') {
         return !rest.contains(['[', ']', '\n', '\r']) && rest.chars().count() <= 64;
@@ -25,7 +23,6 @@ fn could_be_marker(s: &str) -> bool {
     }
 }
 
-/// None means more input is needed to decide whether there is a prefix.
 fn clean(text: &str, finished: bool) -> Option<String> {
     let mut rest = text;
     let mut removed = false;
@@ -38,7 +35,6 @@ fn clean(text: &str, finished: bool) -> Option<String> {
             let after = &trimmed[found.end()..];
             if after.is_empty() && !finished { return None; }
             // Preserve Markdown links, reference definitions, and ordinary
-            // words that merely start with a time-like sequence.
             if !after.is_empty() && !after.starts_with(char::is_whitespace) {
                 return Some(if removed { rest.trim_start_matches(char::is_whitespace).to_string() } else { text.to_string() });
             }

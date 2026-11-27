@@ -1,8 +1,3 @@
-//! `task list` — the composer's todo panel: a progress header plus one
-//! row per task (status icon + text). Pure function of the list: progress
-//! is done/total, current is the first unfinished task. Statuses and icons
-//! mirror the app (`completed` check-circle, `in_progress` spinning
-//! circle-notch, anything else plain circle). Verbatim app classes.
 
 use rustex1_kit::h::{lit, m, Node};
 
@@ -83,7 +78,7 @@ pub const CSS: &str = r#"
 @keyframes mjs-todo-spin { to { transform: rotate(360deg); } }
 .mjs-chat .todo-text { min-width: 0; }
 
-/* demo framing: the panel alone */
+
 .task-list-demo { width: min(400px, 100%); }
 .task-list-demo .mjs-chat.mode-sidebar { border-left: 0; }
 "#;
@@ -116,7 +111,6 @@ fn row(task: &Task) -> Node {
         ])
 }
 
-/// the panel for any task slice.
 pub fn task_list(tasks: &[Task]) -> Node {
     let done = tasks.iter().filter(|t| t.status == "completed").count();
     let mut header = vec![
@@ -139,7 +133,6 @@ pub fn task_list(tasks: &[Task]) -> Node {
     ])
 }
 
-/// standalone demo: one of each status.
 pub fn demo() -> Node {
     m("div").class("task-list-demo").child(
         m("div")

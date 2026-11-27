@@ -1,11 +1,4 @@
-//! `queued card` — the turn is waiting for its model.
-//!
-//! A local model serves one inference request at a time, so a turn can wait
-//! for a free slot of its `provider:model` before anything streams. The
 //! wait is a row on the rail, not a silent stall: the user must be able to
-//! tell "slow model" from "still in line". The row's text names the model
-//! it is waiting for; the badge, when the line is longer than one, says how
-//! many turns are ahead of it.
 
 use rustex1_kit::h::{m, Node};
 
@@ -30,7 +23,6 @@ pub const CSS: &str = r#"
 .queued-demo .mjs-chat.mode-sidebar { border-left: 0; }
 "#;
 
-/// What this kind contributes to a message block.
 pub fn parts(st: &str, v: &str) -> Vec<Node> {
     vec![m("div")
         .class("bubble-queued")
@@ -38,7 +30,6 @@ pub fn parts(st: &str, v: &str) -> Vec<Node> {
         .kids(vec![
             Node::icon("hourglass").class("ph ph-hourglass"),
             m("span").class("queued-text").text(&format!("{v}.text")),
-            // 1 is "next in line" — nothing to say. Past that, the count.
             m("span")
                 .class("queued-pos")
                 .show(&format!("{v}.position > 1"))
@@ -50,7 +41,6 @@ pub fn parts(st: &str, v: &str) -> Vec<Node> {
         ])]
 }
 
-/// standalone demo — the card in the row the transcript draws it in.
 pub fn demo() -> Node {
     let (st, v) = (samples::EXPR, samples::row("queued"));
     m("div").class("queued-demo").child(

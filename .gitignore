@@ -5,6 +5,7 @@ ui/pkg/
 /tmp/
 
 # Caper and vendor session stores
+AGENTS.md
 .caper/
 .angela/
 .env

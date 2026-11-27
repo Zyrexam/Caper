@@ -1,19 +1,7 @@
-//! `item-group` — a labelled group: state-coloured name + inline counter,
-//! then a list of rows.
-//!
-//! Each row = robot icon + bold name + truncated summary + relative time + a
-//! per-state symbol — the shared ring of `session_state`: the state is its
-//! colour, the session's context usage is its fill.
-//!
-//! `tone` is `done` / `working` / `idle`; it drives both the group's colour and
-//! every row's symbol (a group is homogenous in the storybook).
-//!
-//! Owns its CSS; injected at boot by `components::register`.
 
 use rustex1_kit::h::{lit, m, Node};
 use crate::components::session_state;
 
-/// the item group's styles (group + head + list + rows + state symbols' layout).
 pub const CSS: &str = r#"
 .item-group { color: var(--muted); margin-bottom: 18px; max-width: 480px; width: 100%; }
 .item-group.idle { color: var(--gray-dim); }
@@ -50,10 +38,7 @@ pub const CSS: &str = r#"
 .item-meta { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }
 "#;
 
-/// one agent row.
 fn row(name: &str, summary: &str, reltime: &str, tone: &str) -> Node {
-    // per-state symbol — the shared `uiSessionState` unit, so the row's
-    // symbol is literally the same markup featured at /storybook/session-state.
     let symbol = session_state::symbol(tone);
     m("li")
         .class("item-row")
@@ -68,7 +53,6 @@ fn row(name: &str, summary: &str, reltime: &str, tone: &str) -> Node {
         ])
 }
 
-/// the group header: state-coloured name + the inline counter widget.
 fn head(label: &str, count: &str) -> Node {
     m("div")
         .class("item-head")
@@ -78,7 +62,6 @@ fn head(label: &str, count: &str) -> Node {
         ])
 }
 
-/// build one item-group tree.
 pub fn item_group(tone: &str, label: &str, count: &str, rows: &[(String, String, String)]) -> Node {
     m("div")
         .class(&format!("item-group {}", tone))

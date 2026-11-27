@@ -1,4 +1,3 @@
-//! Shared Simple / Advanced display mode and its toggle.
 use rustex1_kit::h::{m, Node};
 use rustex1_kit::{js, mjs};
 use rustex1_kit::mjs::Def;

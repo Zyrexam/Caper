@@ -1,12 +1,5 @@
-//! Pure helpers — Rust port of `m-js-cmp-chat/src/helpers.js`.
-//!
-//! The JS original is shared between the widgets and an optional store; here
-//! the same functions live in one place and both the store and the page call
-//! them. Anything that touches the DOM stays in `pages.rs`; this file is
-//! strings in, strings out (plus tiny JsValue readers).
 
 
-/// `escHtml` — & < > " escaped.
 pub fn esc_html(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for c in s.chars() {
@@ -26,30 +19,15 @@ pub fn format_elapsed(ms: f64) -> String {
 }
 
 
-// ===========================================================================
-// Markdown → HTML, in Rust.
-// ===========================================================================
 
-/// Render message markdown to HTML.
-///
-/// **Escapes first, then emits tags.** Every `<`, `>` and `&` in the model's
 /// output becomes an entity before any markup is added, so the only HTML in
-/// the result is HTML this function wrote. That is what makes it safe to feed
 /// `x-html`, which is otherwise an injection sink — and it is why this does
-/// not need DOMPurify.
-///
 /// Supported, because this is what models actually emit: fenced code blocks
-/// (``` with an optional language), ATX headings, unordered and ordered
-/// lists, pipe tables, blockquotes, horizontal rules, paragraphs, and the inline set
-/// `` `code` ``, `**bold**`, `*italic*`, `~~strike~~`, `[text](url)` and
-/// bare HTTP(S) URLs.
 pub fn markdown_to_html(src: &str) -> String {
     let mut out = String::new();
     let lines: Vec<&str> = src.split('\n').collect();
     let mut i = 0;
-    // Deliberately a small state machine rather than a parser: the input is
     // chat prose, and a half-finished fence at the end of a stream must
-    // still render rather than swallowing the rest of the message.
     let mut list: Option<&'static str> = None; // "ul" | "ol"
     let mut para: Vec<String> = Vec::new();
 
@@ -73,7 +51,6 @@ pub fn markdown_to_html(src: &str) -> String {
         let raw = lines[i];
         let trimmed = raw.trim();
 
-        // --- fenced code -------------------------------------------------
         if let Some(rest) = trimmed.strip_prefix("```") {
             close_para!();
             close_list!();
@@ -84,8 +61,6 @@ pub fn markdown_to_html(src: &str) -> String {
                 body.push(esc_html(lines[i]));
                 i += 1;
             }
-            // Skip the closing fence when there is one; an unclosed fence at
-            // the end of a stream simply ends the block.
             if i < lines.len() {
                 i += 1;
             }
@@ -98,7 +73,6 @@ pub fn markdown_to_html(src: &str) -> String {
             continue;
         }
 
-        // --- blank line ----------------------------------------------------
         if trimmed.is_empty() {
             close_para!();
             close_list!();
@@ -106,7 +80,6 @@ pub fn markdown_to_html(src: &str) -> String {
             continue;
         }
 
-        // A delimiter row distinguishes a table from ordinary pipe prose.
         if i + 1 < lines.len() {
             if let (Some(header), Some(align)) = (table_cells(raw), table_delimiter(lines[i + 1])) {
                 if header.len() == align.len() {
@@ -133,7 +106,6 @@ pub fn markdown_to_html(src: &str) -> String {
             }
         }
 
-        // --- horizontal rule ------------------------------------------------
         if trimmed == "---" || trimmed == "***" || trimmed == "___" {
             close_para!();
             close_list!();
@@ -142,7 +114,6 @@ pub fn markdown_to_html(src: &str) -> String {
             continue;
         }
 
-        // --- heading ---------------------------------------------------------
         let hashes = trimmed.chars().take_while(|c| *c == '#').count();
         if (1..=6).contains(&hashes) && trimmed.chars().nth(hashes) == Some(' ') {
             close_para!();
@@ -153,7 +124,6 @@ pub fn markdown_to_html(src: &str) -> String {
             continue;
         }
 
-        // --- blockquote --------------------------------------------------------
         if let Some(q) = trimmed.strip_prefix("> ").or_else(|| trimmed.strip_prefix(">")) {
             close_para!();
             close_list!();
@@ -162,7 +132,6 @@ pub fn markdown_to_html(src: &str) -> String {
             continue;
         }
 
-        // --- list items ---------------------------------------------------------
         let bullet = trimmed
             .strip_prefix("- ")
             .or_else(|| trimmed.strip_prefix("* "))
@@ -190,7 +159,6 @@ pub fn markdown_to_html(src: &str) -> String {
             continue;
         }
 
-        // --- paragraph text --------------------------------------------------
         close_list!();
         para.push(inline(trimmed));
         i += 1;
@@ -200,7 +168,6 @@ pub fn markdown_to_html(src: &str) -> String {
     out
 }
 
-/// Split a pipe row, preserving escaped pipes and pipes inside code spans.
 fn table_cells(line: &str) -> Option<Vec<String>> {
     let line = line.trim();
     if line.is_empty() { return None; }
@@ -246,7 +213,6 @@ fn table_cell(out: &mut String, tag: &str, cell: &str, alignment: &str) {
     out.push_str(&format!("<{tag}{class}>{}</{tag}>", inline(cell)));
 }
 
-/// `1. text` / `12) text` → the text.
 fn ordered_item(line: &str) -> Option<&str> {
     let digits = line.chars().take_while(|c| c.is_ascii_digit()).count();
     if digits == 0 {
@@ -258,18 +224,13 @@ fn ordered_item(line: &str) -> Option<&str> {
 }
 
 /// Inline spans. Escapes first, so the emitted tags are the only markup.
-///
-/// Code spans are lifted out before the emphasis passes and put back after:
 /// otherwise `` `**not bold**` `` would get a `<strong>` inside the `<code>`,
-/// which is exactly the opposite of what backticks mean.
 fn inline(text: &str) -> String {
     let escaped = esc_html(text);
     let (masked, spans) = mask_code(&escaped);
     let (s, anchors) = links(&masked);
     let s = wrap(&s, "**", "strong");
-    // Any `**` left over is a half-typed bold marker still arriving. Hide it
     // from the single-`*` pass, which would otherwise split it into an empty
-    // `<em></em>` — the classic streaming artifact.
     let s = s.replace("**", "\u{1}");
     let s = wrap(&s, "~~", "del");
     let s = wrap(&s, "*", "em");
@@ -281,8 +242,6 @@ fn inline(text: &str) -> String {
 /// A sentinel that cannot survive `esc_html`, so it can never come from input.
 const CODE_MARK: char = '\u{0}';
 
-/// Replace `` `code` `` runs with sentinels, returning the stripped text and
-/// the rendered spans in order.
 fn mask_code(s: &str) -> (String, Vec<String>) {
     let mut out = String::new();
     let mut spans = Vec::new();
@@ -302,7 +261,6 @@ fn mask_code(s: &str) -> (String, Vec<String>) {
             }
             i += 2;
         } else {
-            // Unterminated run: keep the backtick as literal text.
             out.push('`');
             out.push_str(rest[i]);
             i += 1;
@@ -327,8 +285,6 @@ fn unmask(s: &str, mark: char, spans: &[String]) -> String {
     out
 }
 
-/// Render explicit Markdown links and bare HTTP(S) URLs. Anchor markup is
-/// masked until after emphasis parsing, so punctuation in an href stays data.
 const LINK_MARK: char = '\u{2}';
 
 fn links(s: &str) -> (String, Vec<String>) {
@@ -344,8 +300,6 @@ fn links(s: &str) -> (String, Vec<String>) {
                         let label: String = b[i + 1..close].iter().collect();
                         let href: String = b[close + 2..end].iter().collect();
                         let lower = href.trim().to_ascii_lowercase();
-                        // `![alt](src)` — an image is a link whose bracket
-                        // carries a `!`. Same URL rules; the `!` is eaten.
                         let is_image = i > 0 && b[i - 1] == '!';
                         let allowed = lower.starts_with("http://") || lower.starts_with("https://")
                             || lower.starts_with("mailto:") || lower.starts_with('#') || lower.starts_with('/');
@@ -386,7 +340,6 @@ fn links(s: &str) -> (String, Vec<String>) {
         };
         let scheme = if starts("https://") { 8 } else if starts("http://") { 7 } else { 0 };
         let boundary = i == 0 || !(b[i - 1].is_alphanumeric() || matches!(b[i - 1], '_' | '@'));
-        // An incomplete [label](URL is kept literal until its closing ')'.
         let unfinished_link = i >= 2 && b[i - 1] == '(' && b[i - 2] == ']';
         if scheme > 0 && boundary && !unfinished_link && i + scheme < b.len()
             && (b[i + scheme].is_ascii_alphanumeric() || b[i + scheme] == '[')
@@ -394,7 +347,6 @@ fn links(s: &str) -> (String, Vec<String>) {
             let mut end = i + scheme;
             while end < b.len() {
                 if b[end].is_whitespace() || matches!(b[end], '<' | '>' | '"' | '\'' | '`' | '*') { break; }
-                // Escaped HTML delimiters are text boundaries, not part of a URL.
                 if b[end] == '&' && ["&quot;", "&lt;", "&gt;"].iter().any(|entity| {
                     let tail: String = b[end..].iter().take(entity.len()).collect();
                     tail == *entity
@@ -424,7 +376,6 @@ fn links(s: &str) -> (String, Vec<String>) {
     (out, anchors)
 }
 
-/// Paired delimiters → a tag. Unpaired markers are left as text.
 fn wrap(s: &str, marker: &str, tag: &str) -> String {
     let parts: Vec<&str> = s.split(marker).collect();
     if parts.len() < 3 {
@@ -476,7 +427,6 @@ mod md_tests {
 
     #[test]
     fn html_in_the_source_is_escaped_not_executed() {
-        // The property the whole design rests on.
         let h = markdown_to_html("<script>alert(1)</script>");
         assert!(!h.contains("<script"), "{h}");
         assert!(h.contains("&lt;script&gt;"), "{h}");
@@ -532,7 +482,6 @@ mod md_tests {
 
     #[test]
     fn an_unclosed_fence_still_renders() {
-        // Mid-stream the closing fence has not arrived yet.
         let h = markdown_to_html("```\nhalf a block");
         assert!(h.contains("<pre><code>half a block"), "{h}");
     }
@@ -597,15 +546,10 @@ mod streaming_md_tests {
     use super::*;
 
     /// Feeding a message one character at a time must never produce broken
-    /// markup at any prefix — the streamdown contract. Mid-stream the text is
-    /// *always* incomplete, so "renders correctly when finished" is not
-    /// enough.
     fn every_prefix_is_sane(src: &str) {
         for n in 1..=src.chars().count() {
             let prefix: String = src.chars().take(n).collect();
             let h = markdown_to_html(&prefix);
-            // No unbalanced tag may escape: count opens vs closes for the
-            // tags this renderer emits in pairs.
             for tag in ["code", "strong", "em", "del", "pre", "a", "p", "li"] {
                 let opens = h.matches(&format!("<{tag}>")).count()
                     + if tag == "a" {
@@ -674,7 +618,6 @@ mod streaming_md_tests {
 
     #[test]
     fn an_opening_fence_alone_opens_a_code_block() {
-        // streamdown renders the block as soon as the fence opens, rather
         // than waiting for the close — otherwise code appears all at once.
         let h = markdown_to_html("```");
         assert!(h.contains("<pre><code>"), "{h}");
@@ -690,42 +633,25 @@ mod streaming_md_tests {
     }
 }
 
-/// What the composer's metric row shows.
-///
-/// Two different things, deliberately: rates describe the **last** turn
-/// (an average over a whole session would flatten to meaninglessness),
-/// while totals describe the **session** (what this conversation has cost
-/// so far). The icons say which is which — a gauge and a clock read as
-/// "right now", arrows and a disk read as "so far".
 #[derive(Debug, Default, Clone, Copy)]
 pub struct SessionMetrics {
-    /// Last turn.
     pub tok_per_sec: f64,
-    /// Total wall time of the last turn, tool execution included.
-    /// (The backend also reports `ttft_ms`; the row shows duration, which
-    /// answers "how long did that take" rather than "when did it start".)
     pub duration_ms: f64,
-    /// Session totals.
     pub input_tokens: f64,
     pub output_tokens: f64,
     pub bytes: f64,
 }
 
-/// Render the metric row.
 pub fn metrics_html(m: &SessionMetrics) -> String {
     let mut chips = String::new();
     let chip = |icon: &str, text: String| {
         format!("<span class=\"metric-chip\"><i class=\"ph ph-{icon}\"></i><span>{text}</span></span>")
     };
     if m.tok_per_sec.is_finite() && m.tok_per_sec > 0.0 {
-        // Whole tokens per second: the decimals were noise at this scale,
-        // and they changed on every turn without meaning anything.
         chips.push_str(&chip("gauge", format!("{:.0} tok/s", m.tok_per_sec)));
     }
-    // `↑ 1,761  ↓ 31 tok` — the arrows already say in and out, so the unit
     // is written once, on the last of the pair. When only one of them has a
     // value it carries the unit itself, so the row never reads `↑ 1,761`
-    // with no indication of what was counted.
     let has_in = m.input_tokens.is_finite() && m.input_tokens > 0.0;
     let has_out = m.output_tokens.is_finite() && m.output_tokens > 0.0;
     if has_in {
@@ -745,8 +671,6 @@ pub fn metrics_html(m: &SessionMetrics) -> String {
         chips.push_str(&chip("database", format!("{} bytes", fmt_count(m.bytes))));
     }
     if m.duration_ms.is_finite() && m.duration_ms > 0.0 {
-        // `0.330s elapsed` — the same `{:.3}s` the per-card gutter uses,
-        // with the word that says what the number is.
         chips.push_str(&chip(
             "timer",
             format!("{} elapsed", format_elapsed(m.duration_ms)),
@@ -755,17 +679,11 @@ pub fn metrics_html(m: &SessionMetrics) -> String {
     chips
 }
 
-/// Byte counts, kept short so the chip row stays one line.
-/// Byte counts, kept short so the chip row stays one line.
-/// Thousands separators below 10k, then k/M — a 4-digit count is still
-/// readable, a 7-digit one is not.
-/// Group thousands, then abbreviate: `1,771` / `12.4k` / `3.1M`.
 pub fn fmt_count(n: f64) -> String {
     let n = n.max(0.0);
     if n < 10_000.0 {
         let i = n as u64;
         let s = i.to_string();
-        // group thousands: 1771 -> 1,771
         let mut out = String::new();
         for (idx, ch) in s.chars().enumerate() {
             if idx > 0 && (s.len() - idx) % 3 == 0 {
@@ -836,7 +754,6 @@ mod metric_tests {
     }
 }
 
-/// Truncate to `n` characters with an ellipsis, counting characters rather
 /// than bytes so a multi-byte glyph is never cut in half.
 #[cfg(test)]
 pub fn clip(text: &str, n: usize) -> String {
@@ -857,9 +774,7 @@ mod clip_tests {
     fn clipping_counts_characters_not_bytes() {
         assert_eq!(clip("hello", 10), "hello");
         assert_eq!(clip("hello world", 5), "hello…");
-        // Newlines collapse: a summary line is one line.
         assert_eq!(clip("a\n\nb", 10), "a b");
-        // Four 3-byte characters: a byte-based cut would split one.
         assert_eq!(clip("哦哦哦哦", 2), "哦哦…");
     }
 }

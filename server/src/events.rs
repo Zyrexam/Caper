@@ -1,8 +1,4 @@
 //! One server-side sampler feeds all browsers. Only changed topics are sent.
-//!
-//! What a connection may see is filtered **at the wire** (PLAN44 C4): the
-//! sessions topic and the turn journal are per-user, and the feed is shared.
-//! `viewer: None` is the dev/admin zone — unfiltered.
 use rustex1_devserver::{State, Stream};
 use serde_json::{json, Value};
 use std::sync::{Arc, Condvar, Mutex, OnceLock};
@@ -37,11 +33,6 @@ fn feed() -> &'static Feed {
         changed: Condvar::new(),
     })
 }
-/// A roster changed: re-publish the sessions snapshot **now**. Seating
-/// rewrites no session row by itself, so the snapshot's `seats` fingerprint
-/// is what makes this publish differ — and the moment it does, every open
-/// stream re-diffs per viewer, so the person just invited sees the session
-/// appear in their sidebar without waiting for a row edit or the poll.
 pub fn bump_sessions() {
     publish(0, crate::api::sessions(0));
 }
@@ -72,7 +63,6 @@ pub fn begin_turn(session_id: &str, baseline: Vec<Value>, prompt: String) -> u64
     id
 }
 
-/// Keep a turn from starting while an empty session is being removed.
 pub(crate) fn if_session_idle<T>(id: &str, f: impl FnOnce() -> T) -> Option<T> {
     let snapshot = feed().snapshot.lock().unwrap();
     if snapshot.turns.values().any(|turn| turn.session_id == id && turn.completed.is_none()) {
@@ -118,10 +108,7 @@ fn sandbox_delta(previous: &Value, current: &Value) -> Value {
     patch
 }
 
-/// The sandboxes topic as one viewer may see it (PLAN55 listing gate): rows
-/// whose agent the viewer may not edit are invisible — dropped before the
 /// diff, so a delta can never name one either. Admins and the dev zone see
-/// everything.
 fn sandboxes_visible_to(viewer: Option<i64>, value: &Value) -> Value {
     let mut out = value.clone();
     let Some(rows) = out.get("sandboxes").and_then(Value::as_array).cloned() else {
@@ -142,9 +129,7 @@ fn sandboxes_visible_to(viewer: Option<i64>, value: &Value) -> Value {
     out
 }
 
-/// The sessions topic as one viewer may see it: unshared conversations are
-/// invisible (PLAN44 C4) — dropped before the diff, so a delta can never
-/// mention one either.
+/// invisible  — dropped before the diff, so a delta can never
 fn visible_to(viewer: Option<i64>, value: &Value) -> Value {
     let Some(uid) = viewer else {
         return value.clone();
@@ -156,8 +141,6 @@ fn visible_to(viewer: Option<i64>, value: &Value) -> Value {
         .iter()
         .filter_map(|r| r.get("id").and_then(Value::as_str).map(str::to_string))
         .collect();
-    // Seated rooms count too (the roster is what makes a room appear in the
-    // viewer's tree) — one predicate with the listing and the read gates.
     let keep: HashSet<String> = crate::api::visible_session_ids(Some(uid), &names)
         .into_iter()
         .collect();
@@ -175,12 +158,6 @@ fn visible_to(viewer: Option<i64>, value: &Value) -> Value {
     out
 }
 
-/// May this viewer see a turn's session at all? A running turn in an
-/// unshared conversation is not theirs to watch.
-/// A turn in a conversation this viewer cannot see is not theirs to watch —
-/// not its rows, not its prompt. "Cannot see" is the same predicate as the
-/// listings and the read gate: the ACL, **or** being seated in it (a person
-/// invited into a room watches its turns live like anyone else).
 fn turn_visible(viewer: Option<i64>, session_id: &str) -> bool {
     crate::api::session_open_to(viewer, session_id, "read")
 }
@@ -188,14 +165,10 @@ fn turn_visible(viewer: Option<i64>, session_id: &str) -> bool {
 pub fn start(state: Arc<State>) {
     let port = state.config.port;
     // The sandbox service can be slow or offline; its poll must not block
-    // session updates, approvals, or the event feed.
     std::thread::spawn(move || {
         let server = crate::api::angela(port);
         let mut last = json!([]);
         loop {
-            // PLAN55 D6/D13: rows carry each container's serving (session,
-            // agent); no friendly names and no per-container session count
-            // (it is always 1).
             let up = match angela::sandbox::list_for_menu(&server.state.store) {
                 Ok(rows) => {
                     last = rows;
@@ -345,10 +318,6 @@ pub fn stream(out: &mut Stream<'_>, viewer: Option<i64>) {
             if guard.versions[i] != seen[i] {
                 seen[i] = guard.versions[i];
                 if let Some(value) = &guard.values[i] {
-                    // Both sides of the diff pass through the viewer's
-                    // window first: a delta computed from unfiltered
-                    // snapshots would name sessions — or sandboxes — they
-                    // may not see.
                     let (old_f, new_f) = match *name {
                         "sessions" => (
                             previous[i].as_ref().map(|p| visible_to(viewer, p)),
@@ -377,8 +346,6 @@ pub fn stream(out: &mut Stream<'_>, viewer: Option<i64>) {
         }
         turn_version = guard.turn_version;
         for (id, turn) in &guard.turns {
-            // A turn in a conversation this viewer cannot see is not theirs
-            // to watch — not its rows, not its prompt.
             if !turn_visible(viewer, &turn.session_id) {
                 continue;
             }
@@ -400,8 +367,6 @@ pub fn stream(out: &mut Stream<'_>, viewer: Option<i64>) {
                         frames.push(format!("event: turn-finished\ndata: {data}\n\n"));
                     }
                 }
-                // Completed turns that predate this connection come from the
-                // persisted transcript, including after later feed wakes.
                 turns_seen.insert(*id, turn.rows.len());
             }
         }

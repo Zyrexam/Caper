@@ -1,59 +1,21 @@
-//! Repos and worktrees on **this machine** — the two checkout-shaped things
-//! the composer's last two pickers choose between.
-//!
 //! ## Why these live here and not in angela
-//!
-//! A conversation, its project and its transcript travel with the project
-//! directory. "There is a clone of psicom/chat at `/workspace/psicom/chat`"
-//! does not — it is true of this laptop and nowhere else. So the registry is
-//! a file beside the database rather than a table in it, and nothing here
-//! reaches angela.
-//!
 //! ## Why there is no scan
-//!
 //! A repo becomes selectable only when someone registers its absolute path.
-//! Walking a configured root for `.git` directories would be friendlier and
-//! is what most tools do; it also means a list that changes under you, and
 //! every clone on the machine — including ones you would never mount into a
-//! sandbox — showing up in a menu. Registration is one deliberate act per
-//! repo and the list is then exactly what you put in it.
-//!
-//! ## Shelling out to git
-//!
-//! Every call is [`std::process::Command`] with separate arguments and no
 //! shell, so a path or a branch name is an argument and can never be parsed
-//! as a command. On top of that, [`is_safe_ref`] refuses anything that could
-//! be read as an *option* — a branch called `--upload-pack=…` is a real
-//! attack against tools that interpolate, and `-` is a legal first character
-//! for a string that is not a legal branch.
-//!
-//! ## Worktrees and who cleans them up
-//!
-//! sbox-b creates sandboxes and knows nothing about worktrees, so its
-//! `DELETE` cannot remove one. That makes reaping this module's job:
-//! [`forget_for_sandbox`] runs when a sandbox is destroyed, and
-//! [`sweep`] runs at boot to catch the ones a crash left behind. Without
-//! both, every sandbox created from a worktree would leak a checkout.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use serde_json::{json, Map, Value};
 
-/// How long any git call may take before we give up on it. A clone is not
-/// run here — these are all local metadata operations — so this is about a
-/// wedged filesystem rather than a slow network.
 const GIT_TIMEOUT_SECS: u64 = 30;
 
-// ── the registry file ───────────────────────────────────────────────────
 
 fn registry_path(root: &Path) -> PathBuf {
     root.join(".caper").join("hosts.json")
 }
 
-/// Read the registry, or an empty one. A corrupt file reads as empty rather
-/// than fatal: it is a cache of paths the user can re-register, and refusing
-/// to start the UI over it would be the worse failure.
 pub fn load(root: &Path) -> Value {
     let text = std::fs::read_to_string(registry_path(root)).unwrap_or_default();
     let v: Value = serde_json::from_str(&text).unwrap_or(Value::Null);
@@ -70,7 +32,6 @@ fn save(root: &Path, v: &Value) -> Result<(), String> {
         std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     }
     let text = serde_json::to_string_pretty(v).map_err(|e| e.to_string())?;
-    // Write-then-rename: a half-written registry would lose every
     // registration, and this file is only ever read whole.
     let tmp = p.with_extension("json.tmp");
     std::fs::write(&tmp, text).map_err(|e| e.to_string())?;
@@ -81,12 +42,7 @@ fn list_of<'a>(reg: &'a Value, key: &str) -> &'a [Value] {
     reg.get(key).and_then(Value::as_array).map(|v| &v[..]).unwrap_or(&[])
 }
 
-/// A short, stable id for a path. Content-derived so re-registering the same
-/// clone is idempotent rather than producing a second entry pointing at the
-/// same directory.
 fn id_for(prefix: &str, path: &str) -> String {
-    // FNV-1a: no dependency, and this is a naming scheme, not a hash anyone
-    // relies on for integrity.
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;
     for b in path.as_bytes() {
         h ^= *b as u64;
@@ -95,13 +51,8 @@ fn id_for(prefix: &str, path: &str) -> String {
     format!("{prefix}{h:012x}")
 }
 
-// ── validation ──────────────────────────────────────────────────────────
 
-/// A path we are willing to register and later hand to a container runtime.
-///
 /// `:` and `,` are refused because sbox-b's `--mount` takes a
-/// comma-separated, colon-delimited string: a path containing either would
-/// be split in the middle and mount something nobody asked for.
 pub fn check_path(raw: &str) -> Result<PathBuf, String> {
     let t = raw.trim();
     if t.is_empty() {
@@ -120,8 +71,6 @@ pub fn check_path(raw: &str) -> Result<PathBuf, String> {
     if !canon.is_dir() {
         return Err(format!("not a directory: {t}"));
     }
-    // Re-check after canonicalising: a symlink can land somewhere with a
-    // character the mount spec cannot carry.
     let s = canon.to_string_lossy().to_string();
     if s.contains(':') || s.contains(',') {
         return Err("resolved path contains ':' or ','".into());
@@ -129,18 +78,11 @@ pub fn check_path(raw: &str) -> Result<PathBuf, String> {
     Ok(canon)
 }
 
-/// Is this a git checkout? `.git` is a directory in a clone and a **file**
-/// in a worktree, so both are accepted.
 fn is_git_dir(p: &Path) -> bool {
     let g = p.join(".git");
     g.is_dir() || g.is_file()
 }
 
-/// A branch or ref name we will pass to git.
-///
-/// Deliberately stricter than git itself. The leading-dash rule is the one
-/// that matters: git would read `-u` as an option, and a "branch name" is
-/// the most natural place for an attacker-controlled string to arrive.
 pub fn is_safe_ref(s: &str) -> bool {
     let t = s.trim();
     !t.is_empty()
@@ -160,7 +102,6 @@ pub fn is_safe_ref(s: &str) -> bool {
         && !t.chars().any(|c| c.is_whitespace() || c.is_control())
 }
 
-// ── running git ─────────────────────────────────────────────────────────
 
 /// Run git in `dir`. Never through a shell: every argument is passed as one.
 fn git(dir: &Path, args: &[&str]) -> Result<String, String> {
@@ -169,8 +110,6 @@ fn git(dir: &Path, args: &[&str]) -> Result<String, String> {
     for a in args {
         cmd.arg(a);
     }
-    // A prompt would block this thread until the timeout; failing is better
-    // than hanging the request on a credential helper nobody can answer.
     cmd.env("GIT_TERMINAL_PROMPT", "0");
     cmd.env("GIT_OPTIONAL_LOCKS", "0");
     let out = run_with_timeout(cmd)?;
@@ -188,12 +127,6 @@ struct Output {
     stderr: String,
 }
 
-/// `Command::output()` with a deadline.
-///
-/// `std` has no timeout for this, so the child is spawned, polled, and
-/// killed if it outstays the limit. Without it a git call against a hung
-/// network filesystem holds a connection thread for as long as the process
-/// lives.
 fn run_with_timeout(mut cmd: Command) -> Result<Output, String> {
     use std::process::Stdio;
     use std::time::{Duration, Instant};
@@ -227,7 +160,6 @@ fn run_with_timeout(mut cmd: Command) -> Result<Output, String> {
     })
 }
 
-/// A checkout's local branches, in git's own order.
 pub fn branches(dir: &Path) -> Vec<String> {
     git(
         dir,
@@ -243,7 +175,6 @@ pub fn branches(dir: &Path) -> Vec<String> {
     .unwrap_or_default()
 }
 
-/// What `HEAD` is on, or empty in a detached checkout.
 fn current_branch(dir: &Path) -> String {
     git(dir, &["rev-parse", "--abbrev-ref", "HEAD"])
         .map(|s| s.trim().to_string())
@@ -251,9 +182,7 @@ fn current_branch(dir: &Path) -> String {
         .unwrap_or_default()
 }
 
-// ── repos ───────────────────────────────────────────────────────────────
 
-/// Register a clone by absolute path.
 pub fn add_repo(root: &Path, raw_path: &str) -> Result<Value, String> {
     let path = check_path(raw_path)?;
     if !is_git_dir(&path) {
@@ -268,9 +197,6 @@ pub fn add_repo(root: &Path, raw_path: &str) -> Result<Value, String> {
 
     let mut reg = load(root);
     let mut repos: Vec<Value> = list_of(&reg, "repos").to_vec();
-    // Re-registering the same clone updates it rather than duplicating: the
-    // id is derived from the path, so a second entry would be invisible in
-    // the UI and impossible to remove independently.
     repos.retain(|r| r.get("id").and_then(Value::as_str) != Some(id.as_str()));
     repos.push(json!({ "id": id, "path": path_s, "name": name }));
     reg["repos"] = Value::Array(repos);
@@ -278,8 +204,6 @@ pub fn add_repo(root: &Path, raw_path: &str) -> Result<Value, String> {
         .map(|m| m.entry("worktrees").or_insert_with(|| json!([])));
     save(root, &reg)?;
     // What the branch picker should land on. Registering a clone is only
-    // ever a step towards choosing one of its branches, so the caller gets
-    // the row to select rather than having to work it out from the id.
     let head = current_branch(&path);
     let select = if head.is_empty() {
         String::new()
@@ -289,12 +213,6 @@ pub fn add_repo(root: &Path, raw_path: &str) -> Result<Value, String> {
     Ok(json!({ "id": id, "select": select, "selectKind": "branch" }))
 }
 
-/// Forget a clone. Nothing on disk is touched — the repo was here before
-/// chat knew about it and is not chat's to delete.
-///
-/// Its worktrees are forgotten too, since they are listed against it; the
-/// directories themselves are removed properly via [`remove_worktree`]
-/// before this point, or left for [`sweep`].
 pub fn remove_repo(root: &Path, id: &str) -> Result<Value, String> {
     let mut reg = load(root);
     let repos: Vec<Value> = list_of(&reg, "repos")
@@ -313,7 +231,6 @@ pub fn remove_repo(root: &Path, id: &str) -> Result<Value, String> {
     Ok(json!({ "removed": id }))
 }
 
-/// Make a branch in a registered clone. `from` defaults to the current HEAD.
 pub fn add_branch(root: &Path, repo_id: &str, name: &str, from: &str) -> Result<Value, String> {
     let repo = find(root, "repos", repo_id).ok_or("no such repo")?;
     let dir = PathBuf::from(repo.get("path").and_then(Value::as_str).unwrap_or_default());
@@ -324,8 +241,6 @@ pub fn add_branch(root: &Path, repo_id: &str, name: &str, from: &str) -> Result<
     if !base.is_empty() && !is_safe_ref(base) {
         return Err(format!("not a usable start point: {base}"));
     }
-    // `--` so a name that survived validation still cannot be read as a
-    // revision or a path. Belt and braces, and free.
     let mut args = vec!["branch", "--", name];
     if !base.is_empty() {
         args.push(base);
@@ -345,11 +260,6 @@ fn find(root: &Path, key: &str, id: &str) -> Option<Value> {
         .cloned()
 }
 
-/// Where a worktree for this repo and branch should live.
-///
-/// Under `.caper/worktrees` beside the conversations, so a checkout chat
-/// made is recognisable as chat's and a sweep knows where to look. The
-/// branch's `/` becomes `-`: `feature/login` is one directory, not two.
 fn worktree_dir(root: &Path, repo_name: &str, branch: &str) -> PathBuf {
     let safe: String = branch
         .chars()
@@ -360,14 +270,7 @@ fn worktree_dir(root: &Path, repo_name: &str, branch: &str) -> PathBuf {
         .join(format!("{repo_name}-{safe}"))
 }
 
-// ── worktrees ───────────────────────────────────────────────────────────
 
-/// `git worktree add` against a registered clone.
-///
-/// An existing branch is checked out; `create` makes a new one off the
-/// clone's HEAD. Both are one git invocation — the `-b` form is how git
-/// says "and make the branch while you are at it", which avoids a window
-/// where the branch exists but the worktree does not.
 pub fn add_worktree(
     root: &Path,
     repo_id: &str,
@@ -411,8 +314,6 @@ pub fn add_worktree(
         "repoName": repo_name,
         "path": target_s,
         "branch": branch,
-        // Set when a sandbox is created from this worktree, so destroying
-        // that sandbox can take the checkout with it.
         "sandboxId": "",
     }));
     reg["worktrees"] = Value::Array(list);
@@ -425,12 +326,7 @@ pub fn add_worktree(
     }))
 }
 
-/// Remove a worktree: git first, then the registry.
-///
 /// `--force` because the point of removing it is that it is going away, and
-/// a worktree whose sandbox just wrote to it will nearly always be dirty.
-/// Losing uncommitted work in a throwaway checkout is the expected outcome;
-/// the branch, which is where anything worth keeping was committed, stays.
 pub fn remove_worktree(root: &Path, id: &str) -> Result<Value, String> {
     let Some(wt) = find(root, "worktrees", id) else {
         return Err("no such worktree".into());
@@ -441,8 +337,6 @@ pub fn remove_worktree(root: &Path, id: &str) -> Result<Value, String> {
     if let Some(repo) = find(root, "repos", repo_id) {
         let dir = PathBuf::from(repo.get("path").and_then(Value::as_str).unwrap_or_default());
         if let Err(e) = git(&dir, &["worktree", "remove", "--force", path]) {
-            // The registry entry still goes, or a worktree git has already
-            // lost track of becomes permanently unremovable from the UI.
             note = e;
         }
     }
@@ -457,8 +351,6 @@ pub fn remove_worktree(root: &Path, id: &str) -> Result<Value, String> {
     Ok(json!({ "removed": id, "note": note }))
 }
 
-/// Note which sandbox a worktree was mounted into, so destroying that
-/// sandbox can reap it.
 pub fn claim_worktree(root: &Path, id: &str, sandbox: &str) {
     let mut reg = load(root);
     let list: Vec<Value> = list_of(&reg, "worktrees")
@@ -475,11 +367,7 @@ pub fn claim_worktree(root: &Path, id: &str, sandbox: &str) {
     let _ = save(root, &reg);
 }
 
-/// Remove whatever worktree was created for this sandbox.
-///
-/// The half sbox-b cannot do: it owns the container and knows nothing about
 /// the checkout bound into it, so a `DELETE` there would otherwise leave the
-/// worktree behind forever.
 pub fn forget_for_sandbox(root: &Path, sandbox: &str) {
     if sandbox.is_empty() {
         return;
@@ -494,11 +382,7 @@ pub fn forget_for_sandbox(root: &Path, sandbox: &str) {
     }
 }
 
-/// Drop registry entries whose directory is gone.
-///
-/// Run at boot. A crash between `git worktree add` and the registry write,
 /// or a directory removed by hand, otherwise leaves a row the UI offers and
-/// every mount of which fails.
 pub fn sweep(root: &Path) {
     let reg = load(root);
     let before = list_of(&reg, "worktrees").len();
@@ -519,14 +403,8 @@ pub fn sweep(root: &Path) {
     }
 }
 
-// ── what the pickers read ───────────────────────────────────────────────
 
-/// The branch picker's rows: every branch of every registered repo, named by
-/// the branch and qualified by the repo it belongs to.
-///
 /// Flattened rather than grouped because the control shows one line, and two
-/// repos both having `main` is the normal case — the hint is what tells them
-/// apart.
 pub fn branch_items(root: &Path) -> Value {
     let reg = load(root);
     let mut out = Vec::new();
@@ -586,10 +464,6 @@ pub fn worktree_items(root: &Path) -> Value {
     )
 }
 
-/// The host path a sandbox should mount, given what the composer has
-/// selected: the worktree if one is chosen, else the repo behind the branch.
-///
-/// Returns the path and the worktree id (empty when a plain repo was used),
 /// because the caller has to know whether there is anything to reap.
 pub fn mount_for(root: &Path, worktree_id: &str, branch_id: &str) -> Option<(String, String)> {
     if !worktree_id.is_empty() {
@@ -601,7 +475,6 @@ pub fn mount_for(root: &Path, worktree_id: &str, branch_id: &str) -> Option<(Str
         }
     }
     // `<repoId>:<branch>` — only the repo half names a directory. The branch
-    // is whatever that clone currently has checked out; mounting a clone
     // does not switch it, which is exactly why worktrees exist.
     let repo_id = branch_id.split(':').next().unwrap_or_default();
     if repo_id.is_empty() {
@@ -615,7 +488,6 @@ pub fn mount_for(root: &Path, worktree_id: &str, branch_id: &str) -> Option<(Str
     None
 }
 
-/// Everything the four pickers need, in one response.
 pub fn everything(root: &Path) -> Value {
     let mut m = Map::new();
     m.insert("repos".into(), repo_items(root));
@@ -633,7 +505,6 @@ mod tests {
     fn a_branch_name_that_could_be_an_option_is_refused() {
         assert!(is_safe_ref("main"));
         assert!(is_safe_ref("feature/login"));
-        // The one that matters: git would read this as a flag.
         assert!(!is_safe_ref("--upload-pack=touch /tmp/pwned"));
         assert!(!is_safe_ref("-b"));
         assert!(!is_safe_ref("has space"));
@@ -649,7 +520,6 @@ mod tests {
         assert!(check_path("/tmp/a:b").is_err());
         assert!(check_path("/tmp/a,b").is_err());
         assert!(check_path("  ").is_err());
-        // A real directory that is fine.
         assert!(check_path("/tmp").is_ok());
     }
 

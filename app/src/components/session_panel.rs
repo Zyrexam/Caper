@@ -1,25 +1,11 @@
-//! `session panel` — the middle column whole: who is in the room, the
-//! transcript, and the composer under it.
-//!
-//! **One definition, mounted twice.** [`panel`] takes the store expression
-//! it reads from, so the app at `/` and the design guide at
-//! `/storybook/session-panel` render the same tree — the app against
-//! `$store.live`, the guide against [`crate::components::samples`]. They cannot drift,
 //! because there is nothing to drift *from*: the guide is not a second
-//! drawing of the panel, it is the panel with a different store behind it.
-//!
 //! This is why the sample store exists at all. The alternative — a
-//! hand-built demo tree with its own markup — is exactly what had gone
-//! stale: the guide was still showing flat bubbles and the old tool cards
-//! long after the app had grown turn rails, dots, agent colours and the
-//! fold cards.
 
 use rustex1_kit::h::{m, Node};
 
 use crate::components::{composer, history_tree, roster, session, thread};
 use crate::css;
 
-/// The live app's store — what `/` mounts the panel against.
 pub const LIVE_STORE: &str = "$store.live";
 
 pub const CSS: &str = r#"
@@ -92,32 +78,20 @@ pub const CSS: &str = r#"
 }
 .mjs-chat.mode-sidebar .bubble-error { font-size: 13px; }
 
-/* demo framing: full column; the transcript scrolls, the composer pins */
+
 .session-panel-demo { width: min(640px, 100%); height: 640px; }
 .session-panel-demo .mjs-chat.mode-sidebar { border-left: 0; }
 .session-panel-demo .mjs-chat { height: 100%; }
 "#;
 
-/// the column: transcript above, composer below.
-/// The panel, over whichever store holds the conversation.
-///
-/// `st` is the store expression (`$store.live`, `$store.samples`), threaded
-/// down into every part rather than hardcoded in each, which is what lets the
-/// same tree serve the app and the guide.
 pub fn panel(st: &str) -> Node {
     m("div")
         .class("mjs-chat mode-sidebar")
         .attr("aria-label", "Session panel")
         .child(
             m("section").class("main").kids(vec![
-                // Who is here, and which branch you are on: both change what
-                // the next turn does, so both belong above the transcript
-                // rather than in a menu.
                 roster::roster(st),
                 m("div").show(&format!("!{st}.treeOpen")).child(thread::memory_bar(st)),
-                // Without summaries, the transcript retains the evidence and
-                // streaming rows that are not part of the memory tree. Once
-                // compacted, the tree presents the summaries and their leaves.
                 m("div")
                     .show(&format!("!{st}.treeOpen && !{st}.compacted"))
                     .child(session::messages(st)),
@@ -130,12 +104,10 @@ pub fn panel(st: &str) -> Node {
         )
 }
 
-/// The panel as the app mounts it.
 pub fn session_panel() -> Node {
     panel(LIVE_STORE)
 }
 
-/// standalone demo — the same panel, over the sample store.
 pub fn demo() -> Node {
     m("div").class("session-panel-demo").child(panel(crate::components::samples::EXPR))
 }

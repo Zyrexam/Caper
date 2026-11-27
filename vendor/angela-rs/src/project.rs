@@ -89,7 +89,7 @@ mod tests {
     }
 
     #[test]
-    fn search_order_puts_the_angela_dir_first() {
+    fn search_order_puts_the_caper_dir_first() {
         let dirs = agent_search_dirs(Path::new("/p"));
         assert_eq!(dirs[0], PathBuf::from("/p/.caper/agents"));
         assert_eq!(dirs[1], PathBuf::from("/p/agents"));
