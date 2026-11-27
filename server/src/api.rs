@@ -501,7 +501,7 @@ pub fn handle_api(state: &Arc<State>, req: &Request, out: &mut Stream<'_>) {
                     "shields": if crate::auth::instance().shields_down() { "down" } else { "up" },
                 })
             }
-            None => serde_json::json!({ "user": null }),
+            None => serde_json::json!({ "user": null, "dev": true }),
         };
         let _ = out.json(200, &body);
         return;

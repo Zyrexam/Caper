@@ -243,18 +243,7 @@ impl Gate for GateImpl {
             _ => {}
         }
 
-        if is_loopback(peer) && !logged_in {
-            let document = req.method == "GET"
-                && header(req, "accept").contains("text/html")
-                && req.path != "/login";
-            if document {
-                return GateVerdict::Reply(GateReply {
-                    status: 302,
-                    headers: vec![("location".into(), "/login".into())],
-                    content_type: "text/plain",
-                    body: b"login required".to_vec(),
-                });
-            }
+        if is_loopback(peer) {
             return GateVerdict::Allow;
         }
         if logged_in {
@@ -302,7 +291,16 @@ fn login(req: &Request, peer: Option<IpAddr>) -> GateVerdict {
         }
         Some(u) => u,
         None => match ident.create_user(name, name) {
-            Ok(u) => u,
+            Ok(u) => {
+                // A local account starts usable: without these the app hides
+                // every create action and there is no admin UI to grant them.
+                if is_loopback(peer) {
+                    for cap in angela::identity::CAPABILITIES {
+                        let _ = ident.grant_capability(u.id, cap);
+                    }
+                }
+                u
+            }
             Err(e) => {
                 return GateVerdict::Reply(GateReply {
                     status: 400,
