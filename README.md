@@ -16,7 +16,7 @@ a Rust development server, and an embedded agent harness.
 - Multiple agents with shared or session-specific participants
 - Streaming model responses and tool activity
 - OpenAI-compatible providers plus local OpenCode CLI models
-- Projects, worktrees, sandboxes, automations, and ACL sharing
+- Projects, worktrees, sandboxes, and automations
 - A component-driven UI and `/storybook` design guide
 - Windows and Unix development scripts
 
