@@ -8,9 +8,12 @@ run through a deliberately selected harness, provider, and model. Claude Code,
 Codex, and OpenCode are the first external harnesses. Caper's existing Angela
 and AGL path remains available during the transition.
 
-The selected target belongs to the session. A provider or model failure stays
-visible in that session. Caper never retries through a different provider or
-model without an explicit user choice.
+The selected target belongs to the session as a typed `config.target` object
+with separate harness, provider, and model fields. The current `model` field
+remains an Angela compatibility value while the existing dispatcher is
+migrated. A provider or model failure stays visible in that session. Caper
+never retries through a different provider or model without an explicit user
+choice.
 
 ## Current shape and constraints
 
@@ -90,9 +93,11 @@ item. Do not commit or push.
    creating a session. If no configured agent is usable, seat the built-in
    assistant with no MCP dependencies. Start new agent definitions with no MCP
    defaults, and reject MCP names that are not configured.
-3. **Target persistence and selection.** Add the session target fields and
-   expose a server-owned catalog for harnesses, providers, models, and
-   readiness. Preserve a session's choice across reloads.
+3. [x] **Target persistence and selection.** Store the typed target in
+   `config.target`, expose `GET /api/harnesses` with provider/model choices and
+   adapter readiness, and persist the current model pick in the session.
+   Angela is the only ready harness until the separate adapters ship. Existing
+   sessions derive their target from the legacy model without rewriting it.
 4. **Explicit failure behavior.** Keep the selected target if it becomes
    unavailable. Surface provider status and error text, including
    `429 FreeUsageLimitError`. Remove fallback behavior that silently changes

@@ -51,6 +51,10 @@ pub fn models<F: FnMut(JsValue) + 'static>(then: F) {
     rustex1_kit::api::get("/api/models", None, then);
 }
 
+pub fn harnesses<F: FnMut(JsValue) + 'static>(then: F) {
+    rustex1_kit::api::get("/api/harnesses", None, then);
+}
+
 pub fn session<F: FnMut(JsValue) + 'static>(id: &str, then: F) {
     rustex1_kit::api::get(&format!("/api/sessions/{id}"), None, then);
 }

@@ -55,15 +55,22 @@ fn open_session_by_id(id: &str) {
         js::set(&s, "session", &js::get(&v, "session"));
         let meta = js::get(&v, "session");
         let model = js::get_str(&meta, "model");
-        if !model.is_empty() {
-            js::set_str(&s, "model", &model);
-            js::set_str(&mjs::store_ref("dropdown"), "model", &model);
-        }
+        js::set_bool(&s, "targetDirty", false);
+        js::set_str(&s, "model", &model);
+        js::set_str(&mjs::store_ref("dropdown"), "model", &model);
         for field in ["project", "worktreeId", "branchId"] {
             let store_field = if field == "project" { "projectId" } else { field };
             js::set_str(&s, store_field, &js::get_str(&meta, field));
         }
         let config = js::get(&meta, "config");
+        let target = js::get(&config, "target");
+        if js::is_missing(&target) {
+            let fallback = js::obj();
+            attach_target(&fallback, &model);
+            js::set(&s, "target", &js::get(&fallback, "target"));
+        } else {
+            js::set(&s, "target", &target);
+        }
         let reasoning = js::get_str(&config, "reasoningEffort");
         js::set_str(&mjs::store_ref("dropdown"), "level", if reasoning.is_empty() { "medium" } else { &reasoning });
         persist_composer_settings(JsValue::UNDEFINED, js_sys::Array::new());
@@ -169,6 +176,14 @@ fn keep_tab(id: &str) {
 
 fn new_session(_this: JsValue, _args: js_sys::Array) -> JsValue {
     let payload = js::obj();
+    let live = mjs::store_ref(STORE);
+    let target = js::get(&live, "target");
+    let model = js::get_str(&live, "model");
+    if !js::is_missing(&target) && !js::get(&target, "model").is_undefined() {
+        js::set(&payload, "target", &target);
+    } else if model.contains(':') {
+        attach_target(&payload, &model);
+    }
     api::new_session(&payload.into(), |v| {
         let s = mjs::store_ref(STORE);
         let id = js::get_str(&js::get(&v, "session"), "id");
@@ -726,6 +741,11 @@ fn set_model(_this: JsValue, args: js_sys::Array) -> JsValue {
     }
     js::set_str(&mjs::store_ref(STORE), "model", &v);
     js::set_str(&mjs::store_ref("dropdown"), "model", &v);
+    let live = mjs::store_ref(STORE);
+    let target_payload = js::obj();
+    attach_target(&target_payload, &v);
+    js::set(&live, "target", &js::get(&target_payload, "target"));
+    js::set_bool(&live, "targetDirty", true);
     save_model(&v);
     persist_composer_settings(JsValue::UNDEFINED, js_sys::Array::new());
     mjs::redraw();
@@ -734,6 +754,26 @@ fn set_model(_this: JsValue, args: js_sys::Array) -> JsValue {
 
 pub fn load_models() {
     crate::api::models(apply_models);
+}
+
+pub fn load_harnesses() {
+    crate::api::harnesses(|value| {
+        let live = mjs::store_ref(STORE);
+        js::set(&live, "harnessCatalog", &value);
+        mjs::redraw();
+    });
+}
+
+fn attach_target(payload: &JsValue, model: &str) {
+    let target = js::obj();
+    js::set_str(&target, "harness", "angela");
+    if let Some((provider, model)) = model.split_once(':') {
+        if !provider.trim().is_empty() && !model.trim().is_empty() {
+            js::set_str(&target, "provider", provider.trim());
+            js::set_str(&target, "model", model.trim());
+        }
+    }
+    js::set(payload, "target", &target);
 }
 
 fn refresh_models(_this: JsValue, _args: js_sys::Array) -> JsValue {
@@ -818,9 +858,14 @@ fn decide_approval(_this: JsValue, args: js_sys::Array) -> JsValue {
 
 pub fn register() {
     let mut d = Def::new().named("store live");
+    let harness_catalog = js::obj();
+    js::set(&harness_catalog, "harnesses", &js_sys::Array::new().into());
     d.val("sessions", &js_sys::Array::new().into())
         .str("model", &saved_model())
         .val("models", &default_models())
+        .val("harnessCatalog", &harness_catalog)
+        .val("target", &js::obj().into())
+        .bool("targetDirty", false)
         // must not destroy a session, so these are deliberately distinct.
         .val("tabs", &js_sys::Array::new().into())
         .str("previewId", "")
@@ -974,6 +1019,10 @@ fn persist_composer_settings(_this: JsValue, _args: js_sys::Array) -> JsValue {
     let payload = js::obj();
     js::set_str(&payload, "sessionId", &id);
     js::set_str(&payload, "model", &js::get_str(&live, "model"));
+    if js::get_bool(&live, "targetDirty") {
+        js::set(&payload, "target", &js::get(&live, "target"));
+        js::set_bool(&live, "targetDirty", false);
+    }
     js::set_str(&payload, "reasoningEffort", &js::get_str(&dd, "level"));
     rustex1_kit::api::post_json("/api/composer-settings", &payload.into(), |_| {});
     JsValue::UNDEFINED

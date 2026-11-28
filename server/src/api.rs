@@ -6,6 +6,9 @@ use angela::serve::{AppState, Server as AngelaServer};
 use rustex1_devserver::{Request, State, Stream};
 use serde_json::Value;
 
+#[cfg(test)]
+static TEST_ROOT_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 /// Where sessions live. `CAPER_ROOT` overrides; legacy `ANGELA_ROOT` remains
 /// legacy `ANGELA_ROOT` remains supported; otherwise the server directory is
 pub fn project_root() -> std::path::PathBuf {
@@ -189,6 +192,19 @@ pub fn models() -> Value {
     serde_json::json!({"default_model": default, "models": models})
 }
 
+fn session_target(body: &Value) -> Result<crate::harness_catalog::SessionTarget, String> {
+    let catalog = crate::harness_catalog::catalog();
+    if let Some(target) = body.get("target") {
+        return crate::harness_catalog::parse_target(target, &catalog);
+    }
+    if let Some(model) = body.get("model").and_then(Value::as_str).filter(|s| !s.trim().is_empty()) {
+        let target = crate::harness_catalog::SessionTarget::from_legacy_model(Some(model));
+        return crate::harness_catalog::parse_target(&serde_json::to_value(target).unwrap_or(Value::Null), &catalog);
+    }
+    let target = catalog.get("defaultTarget").cloned().unwrap_or(Value::Null);
+    crate::harness_catalog::parse_target(&target, &catalog)
+}
+
 pub(crate) fn sessions(port: u16) -> Value {
     let mut data = angela(port).sessions_list_for_test();
     let path = project_root().join(".caper").join("conversations.db");
@@ -330,13 +346,22 @@ fn create_session_in_project(
     let project_root_dir = explicit_project_root
         .or_else(|| project.as_deref().and_then(|n| crate::local_projects::path_for(root, n).map(|p| p.to_string_lossy().to_string())));
     let agent = session_agent(store, str_field("agent").as_deref())?;
-    let model = str_field("model").or_else(|| {
-        (!agent.model.trim().is_empty()).then(|| agent.model.clone())
-    });
+    let explicit_target = body.get("target").is_some() || str_field("model").is_some();
+    let target = if !explicit_target && !agent.model.trim().is_empty() {
+        let configured_target = crate::harness_catalog::SessionTarget::from_legacy_model(Some(&agent.model));
+        crate::harness_catalog::parse_target(
+            &serde_json::to_value(configured_target).unwrap_or(Value::Null),
+            &crate::harness_catalog::catalog(),
+        )?
+    } else {
+        session_target(body)?
+    };
+    let model = target.legacy_model();
     let s = store.create(angela::session_store::NewSession {
         agent: Some(agent.name.clone()),
         model: model.clone(),
         title: str_field("title"),
+        config: Some(crate::harness_catalog::target_config(None, &target)),
         ..Default::default()
     }).map_err(|e| e.to_string())?;
     let id = s.get("id").and_then(Value::as_str).unwrap_or_default().to_string();
@@ -484,6 +509,10 @@ pub fn handle_api(state: &Arc<State>, req: &Request, out: &mut Stream<'_>) {
         let body = models();
         crate::events::publish_models(body.clone());
         let _ = out.json(200, &body);
+        return;
+    }
+    if req.path == "/api/harnesses" && req.method == "GET" {
+        let _ = out.json(200, &crate::harness_catalog::catalog());
         return;
     }
     if req.path == "/api/targets" && req.method == "GET" {
@@ -719,6 +748,16 @@ pub fn handle_api(state: &Arc<State>, req: &Request, out: &mut Stream<'_>) {
     if req.path == "/api/composer-settings" && req.method == "POST" {
         let payload: Value = serde_json::from_slice(&req.body).unwrap_or(Value::Null);
         let id = payload.get("sessionId").and_then(Value::as_str).unwrap_or("");
+        let requested_target = match payload.get("target") {
+            Some(value) => match crate::harness_catalog::parse_target(value, &crate::harness_catalog::catalog()) {
+                Ok(target) => Some(target),
+                Err(error) => {
+                    let _ = out.json(400, &serde_json::json!({"ok": false, "error": error}));
+                    return;
+                }
+            },
+            None => None,
+        };
         let root = project_root();
         let result = angela::conv_store::ConvStore::new(root).ok().and_then(|store| {
             let old = store.load(id)?;
@@ -739,6 +778,12 @@ pub fn handle_api(state: &Arc<State>, req: &Request, out: &mut Stream<'_>) {
                 config.insert("reasoningEffort".into(), reasoning.clone());
                 patch.insert("config".into(), Value::Object(config));
             }
+            if let Some(target) = requested_target {
+                let config = patch.get("config").or_else(|| old.get("config"));
+                let config = crate::harness_catalog::target_config(config, &target);
+                patch.insert("config".into(), config);
+                patch.insert("model".into(), target.legacy_model().map(Value::String).unwrap_or(Value::Null));
+            }
             store.update_meta(id, patch)
         });
         let (status, body) = match result {
@@ -758,7 +803,7 @@ pub fn handle_api(state: &Arc<State>, req: &Request, out: &mut Stream<'_>) {
         let server = angela(state.config.port);
         match create_session_in_project(&server.state.store, &project_root(), &body) {
             Ok(session) => { let _ = out.json(200, &serde_json::json!({ "ok": true, "session": session })); }
-            Err(e) => { let _ = out.json(500, &serde_json::json!({ "error": e })); }
+            Err(e) => { let _ = out.json(400, &serde_json::json!({ "error": e })); }
         }
         return;
     }
@@ -866,19 +911,23 @@ mod session_crud_tests {
 
     static TEMP_ROOT_COUNTER: AtomicU64 = AtomicU64::new(0);
 
-    struct CaperRootGuard(Option<std::ffi::OsString>);
+    struct CaperRootGuard {
+        old: Option<std::ffi::OsString>,
+        _lock: std::sync::MutexGuard<'static, ()>,
+    }
 
     impl CaperRootGuard {
         fn set(root: &std::path::Path) -> Self {
+            let lock = TEST_ROOT_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
             let old = std::env::var_os("CAPER_ROOT");
             std::env::set_var("CAPER_ROOT", root);
-            Self(old)
+            Self { old, _lock: lock }
         }
     }
 
     impl Drop for CaperRootGuard {
         fn drop(&mut self) {
-            match self.0.take() {
+            match self.old.take() {
                 Some(value) => std::env::set_var("CAPER_ROOT", value),
                 None => std::env::remove_var("CAPER_ROOT"),
             }
@@ -955,6 +1004,45 @@ mod session_crud_tests {
     }
 
     #[test]
+    fn a_session_target_is_stored_in_config_and_returned_on_reload() {
+        let root = temp_root("target-persistence");
+        let _caper_root = CaperRootGuard::set(&root);
+        let store = angela::conv_store::ConvStore::memory(&root).unwrap();
+        let target = crate::harness_catalog::catalog()["defaultTarget"].clone();
+        let session = create_session_in_project(&store, &root, &serde_json::json!({"target":target})).unwrap();
+        let id = session["id"].as_str().unwrap();
+        let loaded = store.load(id).unwrap();
+        assert_eq!(loaded["config"]["target"]["harness"], "angela");
+        assert_eq!(loaded["config"]["target"]["provider"], target["provider"]);
+        assert_eq!(loaded["config"]["target"]["model"], target["model"]);
+        let expected_model = target["provider"].as_str().zip(target["model"].as_str())
+            .map(|(provider, model)| Value::String(format!("{provider}:{model}")))
+            .unwrap_or(Value::Null);
+        assert_eq!(loaded["model"], expected_model);
+        drop(store);
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn harness_catalog_reports_only_integrated_harnesses_as_ready() {
+        let root = temp_root("harness-catalog");
+        let _caper_root = CaperRootGuard::set(&root);
+        let config = rustex1_devserver::Config::discover(&root);
+        let state = Arc::new(State::new(config, std::collections::HashMap::new()));
+        let (status, body) = call(&state, "GET", "/api/harnesses", "");
+
+        assert_eq!(status, 200);
+        let harnesses = body["harnesses"].as_array().unwrap();
+        let ready = harnesses.iter().filter(|item| item["ready"] == true)
+            .map(|item| item["id"].as_str().unwrap()).collect::<Vec<_>>();
+        assert_eq!(ready, ["angela"]);
+        assert!(harnesses.iter().any(|item| item["id"] == "claude-code" && item["ready"] == false));
+
+        drop(state);
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
     fn session_crud_needs_no_identity_and_delete_removes_everything() {
         let root = temp_root("crud");
         let _caper_root = CaperRootGuard::set(&root);
@@ -1018,6 +1106,7 @@ mod local_projects_tests {
 
     #[test]
     fn session_created_inside_selected_project_uses_its_context() {
+        let _root_env_lock = TEST_ROOT_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let nanos = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()

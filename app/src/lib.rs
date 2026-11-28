@@ -33,6 +33,7 @@ impl App for Chat {
         components::tab::start();
         components::notification_toggle::start();
         components::live::load_models();
+        components::live::load_harnesses();
         events::start();
     }
 }

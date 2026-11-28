@@ -109,6 +109,11 @@ pub const CSS: &str = r#"
 .dropdown-item-label { flex: 1 1 auto; }
 .dropdown-model-tools { display: flex; justify-content: flex-end; }
 .dropdown-model-tools .model-refresh { width: auto; padding: 5px 8px; }
+.dropdown-harnesses { padding: 5px 8px 6px; border-bottom: 1px solid var(--border); }
+.dropdown-harnesses-title { margin-bottom: 3px; color: var(--gray-dim); font-size: 10px; font-weight: 600; }
+.dropdown-harness-row { display: flex; justify-content: space-between; gap: 18px; padding: 2px 0; color: var(--muted); font-size: 10px; }
+.dropdown-harness-row .ready { color: var(--pastel-green); }
+.dropdown-harness-row .unavailable { color: var(--gray-dim); }
 .dropdown-item-check {
   font-size: 12px;
   color: var(--accent);
@@ -145,6 +150,20 @@ fn model_item(st: &str) -> Node {
         .on("click", &format!("{st}.setModel(modelOption)"))
         .kids(vec![m("span").class("dropdown-item-label").text("modelOption"),
                    m("i").class("ph ph-check dropdown-item-check").show("$store.dropdown.model === modelOption")])
+}
+
+fn harness_readiness() -> Node {
+    let row = m("div").class("dropdown-harness-row")
+        .for_each("harness in $store.live.harnessCatalog.harnesses")
+        .kids(vec![
+            m("span").bind("title", "harness.reason").text("harness.label"),
+            m("span")
+                .bind("class", "(harness.ready ? 'ready' : 'unavailable')")
+                .text("(harness.ready ? 'Ready' : 'Adapter needed')"),
+        ]);
+    m("div").class("dropdown-harnesses")
+        .show("$store.live.harnessCatalog.harnesses.length > 0")
+        .kids(vec![m("div").class("dropdown-harnesses-title").child(lit("Harnesses")), row])
 }
 
 /// - `tone`   — `green` / `accent`; the icon tints on hover/open only
@@ -194,6 +213,7 @@ pub fn dropdown_ex(
                         .attr("title", "Refresh models").attr("aria-label", "Refresh models")
                         .on("click", &format!("{st}.refreshModels()"))
                         .child(m("i").class("ph ph-arrows-clockwise"))),
+                        harness_readiness(),
                         model_item(st).for_each(&format!("modelOption in {st}.models"))]
                 } else {
                     options.iter().map(|o| item(key, o, after)).collect()

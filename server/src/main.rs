@@ -5,6 +5,7 @@ mod assistant_text;
 mod auth;
 mod automations;
 mod events;
+mod harness_catalog;
 mod hostgit;
 mod local_projects;
 mod sbox;
