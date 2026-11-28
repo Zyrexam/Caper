@@ -6,6 +6,7 @@ ui/pkg/
 
 # Caper and vendor session stores
 AGENTS.md
+.scratch/
 .caper/
 .angela/
 .env
