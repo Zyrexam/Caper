@@ -5,7 +5,6 @@ mod assistant_text;
 mod auth;
 mod automations;
 mod events;
-mod firewall;
 mod hostgit;
 mod sbox;
 
@@ -21,10 +20,8 @@ fn main() {
 
     // automation scheduler below can never win the race to build it with a
     let _ = api::angela(config.port);
-    let perimeter = std::sync::Arc::new(auth::Perimeter::load(&root));
-    auth::init(std::sync::Arc::clone(&perimeter));
     let mut server = Server::new(config)
-        .gate(perimeter.gate())
+        .gate(std::sync::Arc::new(auth::GateImpl))
         .raw("/api/", api::handle_api)
         .raw("/media/", api::handle_api)
         .on_start(|state| {

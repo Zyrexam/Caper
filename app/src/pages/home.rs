@@ -7,9 +7,8 @@ use rustex1_kit::mjs::Def;
 use rustex1_kit::{js, mjs};
 
 use crate::components::{
-    agent_editor, agents_menu, automations_menu, identity_switcher, lightbox, mode_toggle,
-    perf_badge, profile_panel, project_tree, sandboxes_menu, session_editor, session_panel,
-    share_dialog, tab, target_form,
+    agent_editor, agents_menu, automations_menu, lightbox, mode_toggle, perf_badge,
+    project_tree, sandboxes_menu, session_editor, session_panel, tab, target_form,
 };
 use crate::css;
 
@@ -188,7 +187,6 @@ pub const CSS: &str = r#"
   gap: 0; padding-top: 0;
 }
 .home-settings-row { display: flex; align-items: center; gap: 6px; padding-right: 14px; }
-.home-settings-spacer { margin-left: auto; }
 
 
 .home-rail-content > div { flex: 0 0 auto; }
@@ -253,27 +251,19 @@ fn rail() -> Node {
         .attr("aria-label", "Projects, agents and automations")
         .kids(vec![
             m("div").class("home-rail-content").kids(vec![
-                // whose `+` the user may use stays — it is the only way to
-                // make the first one. The Sandboxes section never has a `+`
-                m("div").class("home-projects")
-                    .show(&format!(
-                        "($store.ptree.rows({LIVE}.projects, {LIVE}.sessions).length > 0 \
-                          || $store.ident.can('project.create'))"
-                    ))
-                    .child(project_tree::tree(
-                        LIVE,
-                        &format!("{LIVE}.previewSession({{}})"),
-                        &format!("{LIVE}.createTarget('project')"),
-                    )),
-                m("div").class("home-agents")
-                    .show("($store.agents.agents.length > 0 || $store.ident.can('agent.create'))")
-                    .child(agents_menu::agents_menu_live()),
+                // The Sandboxes section never has a `+`
+                m("div").class("home-projects").child(project_tree::tree(
+                    LIVE,
+                    &format!("{LIVE}.previewSession({{}})"),
+                    &format!("{LIVE}.createTarget('project')"),
+                )),
+                m("div").class("home-agents").child(agents_menu::agents_menu_live()),
                 // the (session, agent) it serves, grouped per image. Read-only
                 m("div").class("home-sandboxes")
                     .show(&format!("{LIVE}.sandboxGroups.length > 0"))
                     .child(sandboxes_menu::sandboxes_menu(LIVE)),
-                m("div").class("home-automations")
-                    .show("($store.live.automations.length > 0 || $store.ident.can('automation.create'))")
+                m("div")
+                    .class("home-automations")
                     .child(automations_menu::automations_menu_live()),
             ]),
             // never move as the lists above it grow.
@@ -290,8 +280,6 @@ fn rail() -> Node {
                         ]),
                 ),
                 m("div").class("home-settings-row").kids(vec![
-                    identity_switcher::widget(),
-                    m("span").class("home-settings-spacer"),
                     mode_toggle::button(),
                 ]),
             ]),
@@ -342,13 +330,8 @@ fn main_col() -> Node {
                 m("button")
                     .class("home-empty-new")
                     .attr("type", "button")
-                    .show("$store.ident.can('session.create')")
                     .on("click", "$store.live.newSession()")
                     .child(lit("New session")),
-                m("p")
-                    .class("home-empty-note")
-                    .show("!$store.ident.can('session.create')")
-                    .child(lit("Ask an admin for permission to start sessions.")),
             ]),
     ])
 }
@@ -363,10 +346,8 @@ fn aside() -> Node {
             m("div").class("home-aside-body").kids(vec![
                 agent_editor::agent_editor(),
                 agent_editor::settings_panel(),
-                profile_panel::panel(),
                 target_form::panel(),
                 session_editor::panel(),
-                share_dialog::panel(),
             ]),
         ])
 }

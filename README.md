@@ -1,7 +1,11 @@
 # Caper
 
-Caper is a local, agentic chat workspace for multi-agent conversations,
-branching threads, automation, projects, and sandboxes.
+Caper is a local, single-user agentic chat workspace for multi-agent
+conversations, branching threads, automation, projects, and sandboxes.
+
+There is one user and no login or accounts. The server binds `0.0.0.0` but only
+answers loopback connections; any other peer is disconnected, so the workspace
+is reachable from this machine only.
 
 The application is built with Rust across one process: a WebAssembly frontend,
 a Rust development server, and an embedded agent harness.

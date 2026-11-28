@@ -282,7 +282,6 @@ pub fn tab_bar(st: &str) -> Node {
             .class("tab-plus")
             .attr("type", "button")
             .attr("aria-label", "new session")
-            .show("$store.ident.can('session.create')")
             .on("click", &format!("{st}.newSession()"))
             .child(Node::icon("plus")),
     ])

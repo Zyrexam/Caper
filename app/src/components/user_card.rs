@@ -18,26 +18,15 @@ pub const CSS: &str = r#"
 :is(#sb, #home) .bubble-fork:hover { color: var(--accent); }
 :is(#sb, #home) .bubble-fork:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
 
-/* Another human's message : their bubble, not mine — a teal
-   voice beside the purple one, tail corner flipped to their side. The
-   base look is `session_panel`'s `.bubble-user`; this is only the variant. */
-:is(#sb, #home) .bubble-user.from-other {
-  background: color-mix(in srgb, #2dd4bf 14%, transparent);
-  border-color: color-mix(in srgb, #2dd4bf 35%, transparent);
-  border-radius: 14px 14px 14px 4px;
-}
-
 .user-demo { width: min(560px, 100%); }
 .user-demo .mjs-chat.mode-sidebar { border-left: 0; }
 "#;
 
 pub fn parts(st: &str, v: &str) -> Vec<Node> {
-    let other = format!("({v}.from && {v}.from !== $store.ident.name)");
     vec![
         m("div")
             .class("bubble-user")
             .iff(&format!("{v}.kind === 'user'"))
-            .bind("class", &format!("({other} ? 'from-other' : '')"))
             .child(m("div").class("md-body").inner_html(&format!("{v}.html"))),
         name_tag::user_byline_as(
             st,

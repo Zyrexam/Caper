@@ -8,11 +8,10 @@ use wasm_bindgen::{JsCast, JsValue};
 use crate::components::{
     agents_menu, approval_card, assistant_card, automation_form, automations_menu, composer, decision_card,
     samples, mode_toggle,
-    dropdown, error_card, fold_card, identity_switcher, picker, project_tree, prompt_card, queued_card, rail_head,
-    share_dialog,
+    dropdown, error_card, fold_card, picker, project_tree, prompt_card, queued_card, rail_head,
     target_form,
     field, hint_text, history_tree, item_group, label, nav_rail, notification_toggle, perf_badge, radio_input, range_input,
-    presence, profile_panel, reasoning_card, relative_timestamp, sandboxes_menu, session, session_editor, session_panel,
+    presence, reasoning_card, relative_timestamp, sandboxes_menu, session, session_editor, session_panel,
     session_state,
     system_card, tab, tag_input, task_list, text_area, text_input, thinking, toggle_button, tool_call_card, tool_response_card,
     user_card, validation_info,
@@ -299,19 +298,6 @@ pub fn register(rt: &mut Runtime) {
     });
     rt.route("/storybook/queued-card", "Queued Card", |_| {
         route_def("route /storybook/queued-card", "Queued Card", queued_card::demo())
-    });
-    rt.route("/storybook/identity-switcher", "Identity Switcher", |_| {
-        route_def(
-            "route /storybook/identity-switcher",
-            "Identity Switcher",
-            identity_switcher::demo(),
-        )
-    });
-    rt.route("/storybook/share-dialog", "Share Dialog", |_| {
-        route_def("route /storybook/share-dialog", "Share Dialog", share_dialog::demo())
-    });
-    rt.route("/storybook/profile-panel", "Profile Panel", |_| {
-        route_def("route /storybook/profile-panel", "Profile Panel", profile_panel::demo())
     });
     rt.route("/storybook/user-card", "User Card", |_| {
         route_def("route /storybook/user-card", "User Card", user_card::demo())

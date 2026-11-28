@@ -104,82 +104,6 @@ pub const CSS: &str = r#"
 :is(#sb, #home) .ae-btn.is-confirm { color: var(--danger, #d9534f); }
 :is(#sb, #home) .ae-btn[disabled] { opacity: .5; cursor: default; }
 
-:is(#sb, #home) .shields-switch {
-  appearance: none; border: 0; background: transparent; cursor: pointer;
-  display: inline-flex; align-items: center; gap: 8px; padding: 0;
-
-  align-self: flex-start;
-}
-:is(#sb, #home) .shields-track {
-  position: relative; width: 32px; height: 17px;
-  border-radius: 999px; background: #00ad0d;
-  transition: background 140ms ease;
-}
-:is(#sb, #home) .shields-knob {
-  position: absolute; top: 50%; margin-top: -8px;
-
-  left: 15px;
-  width: 16px; height: 16px; border-radius: 50%; background: #fff;
-  box-shadow: 0 1px 2px rgba(0,0,0,.3);
-  display: inline-flex; align-items: center; justify-content: center;
-  transition: left 160ms cubic-bezier(.2,.8,.2,1);
-}
-:is(#sb, #home) .shields-icon {
-
-  font-size: 10px; color: #00ad0d;
-}
-:is(#sb, #home) .shields-label {
-  display: inline-flex; align-items: center; gap: 5px;
-  font: 500 12px/1 var(--sans); color: var(--text);
-}
-:is(#sb, #home) .shields-switch.is-down .shields-track { background: #ef4444; }
-:is(#sb, #home) .shields-switch.is-down .shields-knob { left: 1px; }
-:is(#sb, #home) .shields-switch.is-down .shields-icon { color: #b91c1c; }
-
-:is(#sb, #home) .ae-input-icon { position: relative; display: flex; align-items: center; }
-:is(#sb, #home) .ae-input-glyph {
-  position: absolute; left: 10px; z-index: 1; pointer-events: none;
-  color: #fff; font-size: 14px; line-height: 1;
-}
-:is(#sb, #home) .ae-input-icon input { padding-left: 32px; }
-:is(#sb, #home) .ae-device-icon {
-  color: #fff; font-size: 12px; line-height: 1.6; flex: 0 0 auto;
-}
-:is(#sb, #home) .shields-glyph { color: #fff; font-size: 13px; line-height: 1; }
-
-:is(#sb, #home) .ae-devices {
-  display: flex; flex-direction: column; gap: 4px;
-  padding: 8px 10px; border: 1px solid var(--line-soft, var(--line));
-  border-radius: 8px; min-height: 34px;
-}
-:is(#sb, #home) .ae-device {
-  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px;
-}
-:is(#sb, #home) .ae-device-fp,
-:is(#sb, #home) .ae-device-ip {
-  font: 400 11px/1.6 var(--mono); color: var(--gray-dim);
-  overflow-wrap: anywhere;
-}
-:is(#sb, #home) .ae-device-when {
-  font: 400 11px/1.6 var(--mono); color: var(--gray-dim);
-}
-:is(#sb, #home) .ae-device-del {
-  border: 0; background: transparent; color: var(--gray-dim);
-  cursor: pointer; padding: 2px; border-radius: 6px; font-size: 12px;
-  line-height: 1;
-
-  opacity: 0; pointer-events: none; transition: opacity 100ms ease;
-}
-:is(#sb, #home) .ae-device:hover .ae-device-del,
-:is(#sb, #home) .ae-bans:hover .ae-device-del,
-:is(#sb, #home) .ae-device-del:focus-visible {
-  opacity: 1; pointer-events: auto;
-}
-:is(#sb, #home) .ae-device-del:hover { color: var(--danger, #f87171); background: var(--panel-2); }
-:is(#sb, #home) .ae-bans {
-  display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center;
-  margin-top: 6px;
-}
 
 "#;
 
@@ -399,15 +323,6 @@ pub fn agent_editor() -> Node {
                         Node::icon("check").class("ph ph-check"),
                         m("span").text(&format!("({ST}.saving ? 'Saving…' : 'Save')")),
                     ]),
-                m("button")
-                    .class("ae-btn")
-                    .attr("type", "button")
-                    .show(&format!("!{ST}.creating"))
-                    .on("click", "$store.share.open('agent', $store.agents.draft.name)")
-                    .kids(vec![
-                        Node::icon("users-three").class("ph ph-users-three"),
-                        m("span").child(lit("Share…")),
-                    ]),
                 m("span").class("spacer"),
                 m("button")
                     .class("ae-btn danger")
@@ -435,52 +350,6 @@ pub fn settings_panel() -> Node {
             m("div").class("agent-editor-head").kids(vec![
                 Node::icon("gear").class("ph ph-gear"),
                 m("span").class("agent-editor-title").child(lit("Settings")),
-            ]),
-            // auto-saves, so the banner is only ever the bad news.
-            validation_info::live("'error'", "$store.ident.error"),
-            m("div").class("ae-field").show("$store.ident.admin").kids(vec![
-                m("label").class("ae-label").kids(vec![
-                    m("span").child(lit("Shields")),
-                    m("span").class("hint").child(lit("up: strangers are firewalled · down: invite by name")),
-                ]),
-                m("button")
-                    .attr("type", "button")
-                    .attr("title", "Toggle shields")
-                    .bind(
-                        "class",
-                        "($store.ident.shields === 'down' ? 'shields-switch is-down' : 'shields-switch')",
-                    )
-                    .on("click", "$store.ident.setShields($store.ident.shields !== 'down')")
-                    .kids(vec![
-                        m("span").class("shields-track").child(
-                            m("span")
-                                .class("shields-knob")
-                                .child(m("i").bind(
-                                    "class",
-                                    "($store.ident.shields === 'down' ? 'ph ph-bold ph-x shields-icon' : 'ph ph-fill ph-check-fat shields-icon')",
-                                )),
-                        ),
-                        m("span").class("shields-label").kids(vec![
-                            m("i").bind(
-                                "class",
-                                "($store.ident.shields === 'down' ? 'ph ph-bold ph-shield shields-glyph' : 'ph ph-bold ph-shield-check shields-glyph')",
-                            ),
-                            m("span")
-                                .text("($store.ident.shields === 'down' ? 'Down' : 'Up')"),
-                        ]),
-                    ]),
-                m("div")
-                    .class("ae-bans")
-                    .for_each("ip in $store.ident.bans")
-                    .kids(vec![
-                        m("span").class("ae-device-ip").text("ip"),
-                        m("button")
-                            .class("ae-device-del")
-                            .attr("type", "button")
-                            .attr("title", "Unban")
-                            .on("click", "$store.ident.unban(ip)")
-                            .child(Node::icon("x").class("ph ph-x")),
-                    ]),
             ]),
         ])
 }

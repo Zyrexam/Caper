@@ -110,7 +110,7 @@ pub const CSS: &str = r#"
 pub fn tree(st: &str, on_open: &str, on_new: &str) -> Node {
     let rows = format!("$store.{STORE}.rows({st}.projects, {st}.sessions)");
     m("div").class("project-tree").bind("class", "($store.home.projectsOpen ? '' : 'is-collapsed')").kids(vec![
-        rail_head::head("Projects", "folders", Some(("New project", on_new, "$store.ident.can('project.create')")), Some("projects")),
+        rail_head::head("Projects", "folders", Some(("New project", on_new, "")), Some("projects")),
         m("div")
             .class("ptree-list")
             .show("$store.home.projectsOpen")

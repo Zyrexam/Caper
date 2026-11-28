@@ -91,12 +91,6 @@ pub const CSS: &str = r#"
   align-self: stretch;
 }
 
-:is(#sb, #home) .turn-row .msg-block.msg-user.msg-from-other {
-  margin-left: 0;
-  margin-right: auto;
-  align-items: flex-start;
-}
-
 :is(#sb, #home) .turn-row .name-tag { align-self: flex-start; margin-top: 4px; }
 
 
@@ -240,7 +234,7 @@ pub fn row(st: &str, v: &str, parts: Vec<Node>) -> Node {
             m("div").class("turn-rail").child(m("span").class("turn-dot")),
             m("div")
                 .class("msg-block")
-                .bind("class", &format!("(({v}.kind === 'user' ? 'msg-user' : '') + (({v}.from && {v}.from !== $store.ident.name) ? ' msg-from-other' : ''))"))
+                .bind("class", &format!("({v}.kind === 'user' ? 'msg-user' : '')"))
                 .kids(parts),
         ])
 }
@@ -273,7 +267,7 @@ pub fn messages_threaded(st: &str) -> Node {
                         .iff("t.leaf && t.message")
                         .bind(
                             "class",
-                            "('msg-block ' + (t.message.kind === 'user' ? 'msg-user' : '') + ((t.message.from && t.message.from !== $store.ident.name) ? ' msg-from-other' : ''))",
+                            "('msg-block ' + (t.message.kind === 'user' ? 'msg-user' : ''))",
                         )
                         .kids(card_kids(st, "t.message")),
                 ]),

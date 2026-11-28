@@ -86,30 +86,12 @@ struct DevSink<'s, 'a> {
     disconnected: bool,
     port: u16,
     assistant_filter: crate::assistant_text::StreamFilter,
-    /// (: ownership is claimed at creation, never at first touch —
-    /// a stranger's first message must not make them the owner).
-    claim_owner: Option<i64>,
-    /// The acting user, for listings the response must filter :
-    viewer: Option<i64>,
 }
 
 impl DevSink<'_, '_> {
     fn publish_row(&mut self, value: &Value) {
         if self.chat {
             if let Some(id) = self.turn_id { crate::events::turn_row(id, value); }
-        }
-        if let (Some(owner), Some(sid)) = (
-            self.claim_owner,
-            value.get("sessionId").and_then(Value::as_str),
-        ) {
-            if value.get("type").and_then(Value::as_str) == Some("session") && !sid.is_empty() {
-                let _ = angela(self.port)
-                    .state
-                    .store
-                    .identity()
-                    .ensure_resource("session", sid, owner);
-                self.claim_owner = None;
-            }
         }
         if !self.disconnected {
             let mut line = serde_json::to_vec(value).unwrap_or_else(|_| b"{}".to_vec());
@@ -122,41 +104,9 @@ impl DevSink<'_, '_> {
 impl<'s, 'a> ResponseSink for DevSink<'s, 'a> {
     fn json(&mut self, status: u16, body: &Value) {
         let mut body = body.clone();
-        if let (Some(owner), Some(sid)) = (
-            self.claim_owner,
-            body.get("id").and_then(Value::as_str),
-        ) {
-            let _ = angela(self.port)
-                .state
-                .store
-                .identity()
-                .ensure_resource("session", sid, owner);
-            self.claim_owner = None;
-        }
         if body.get("messages").and_then(Value::as_array).is_some() {
             if let Some(id) = body.pointer("/session/id").and_then(Value::as_str).map(str::to_owned) {
                 body["messages"] = Value::Array(chat_messages(&angela(self.port).state.store, &id));
-            }
-        }
-        // Agent listings ride this path (angela's /api/agents): only agents
-        if let Some(uid) = self.viewer {
-            if let Some(rows) = body.get_mut("agents").and_then(Value::as_array_mut) {
-                let names: Vec<String> = rows
-                    .iter()
-                    .filter_map(|a| a.get("name").and_then(Value::as_str).map(str::to_string))
-                    .collect();
-                let keep: std::collections::HashSet<String> = angela(self.port)
-                    .state
-                    .store
-                    .identity()
-                    .readable(uid, "agent", &names)
-                    .into_iter()
-                    .collect();
-                rows.retain(|a| {
-                    a.get("name")
-                        .and_then(Value::as_str)
-                        .is_some_and(|n| keep.contains(n))
-                });
             }
         }
         crate::assistant_text::normalize_assistant_messages(&mut body);
@@ -302,126 +252,6 @@ fn delete_empty_session(db: &rusqlite::Connection, id: &str) -> rusqlite::Result
     )? == 1)
 }
 
-/// The acting user's id, or 1 for the dev zone — the gate only lets
-fn actor_id(req: &Request) -> i64 {
-    crate::auth::current_user(req).map(|u| u.id).unwrap_or(1)
-}
-
-fn is_admin(req: &Request) -> bool {
-    crate::auth::current_user(req).map(|u| u.is_admin()).unwrap_or(true)
-}
-
-pub(crate) fn session_open_to(uid: Option<i64>, sid: &str, privilege: &str) -> bool {
-    let Some(uid) = uid else {
-        return true;
-    };
-    let server = angela(0);
-    let ident = server.state.store.identity();
-    if ident.user_by_id(uid).map(|u| u.is_admin()).unwrap_or(false) {
-        return true;
-    }
-    if ident.can(uid, "session", sid, privilege) {
-        return true;
-    }
-    ident
-        .user_by_id(uid)
-        .map(|u| server.state.store.sessions_seating(&u.name).iter().any(|s| s == sid))
-        .unwrap_or(false)
-}
-
-pub(crate) fn visible_session_ids(uid: Option<i64>, names: &[String]) -> Vec<String> {
-    let Some(uid) = uid else {
-        return names.to_vec();
-    };
-    let server = angela(0);
-    let ident = server.state.store.identity();
-    if ident.user_by_id(uid).map(|u| u.is_admin()).unwrap_or(false) {
-        return names.to_vec();
-    }
-    let allowed: std::collections::HashSet<String> =
-        ident.readable(uid, "session", names).into_iter().collect();
-    let seated: std::collections::HashSet<String> = ident
-        .user_by_id(uid)
-        .map(|u| server.state.store.sessions_seating(&u.name).into_iter().collect())
-        .unwrap_or_default();
-    names
-        .iter()
-        .filter(|n| allowed.contains(*n) || seated.contains(*n))
-        .cloned()
-        .collect()
-}
-
-/// visible — and its container destroyable — only to the admin and to users
-/// against: admin-only (fail closed).
-fn sandbox_visible_with(
-    ident: &angela::identity::Identity<'_>,
-    viewer: Option<i64>,
-    agent: &str,
-) -> bool {
-    let Some(uid) = viewer else {
-        return true;
-    };
-    if ident.user_by_id(uid).map(|u| u.is_admin()).unwrap_or(false) {
-        return true;
-    }
-    !agent.is_empty() && ident.can(uid, "agent", agent, "edit")
-}
-
-pub(crate) fn sandbox_visible(viewer: Option<i64>, agent: &str) -> bool {
-    let ident = angela(0).state.store.identity();
-    sandbox_visible_with(&ident, viewer, agent)
-}
-
-fn visible_sandboxes(viewer: Option<i64>, rows: Value) -> Value {
-    let ident = angela(0).state.store.identity();
-    let Value::Array(list) = rows else {
-        return rows;
-    };
-    Value::Array(
-        list.into_iter()
-            .filter(|r| {
-                sandbox_visible_with(&ident, viewer, r.get("agent").and_then(Value::as_str).unwrap_or_default())
-            })
-            .collect(),
-    )
-}
-
-fn actor_may(req: &Request, cap: &str) -> bool {
-    match crate::auth::current_user(req) {
-        Some(u) => angela(0).state.store.identity().has_capability(u.id, cap),
-        None => true,
-    }
-}
-
-fn required_capability(req: &Request) -> Option<&'static str> {
-    if req.method == "GET" || req.method == "HEAD" {
-        return None;
-    }
-    let p = req.path.as_str();
-    if p == "/api/session/new" {
-        return Some("session.create");
-    }
-    if p == "/api/agents" || p.starts_with("/api/agents/") {
-        return Some("agent.create");
-    }
-    if p.starts_with("/api/automations/") {
-        return Some("automation.create");
-    }
-    if p.starts_with("/api/sessions/") && p.ends_with("/participants") {
-        return Some("session.invite");
-    }
-    if matches!(
-        p,
-        "/api/projects/project-add"
-            | "/api/projects/repo-add"
-            | "/api/projects/branch-add"
-            | "/api/projects/worktree-add"
-    ) {
-        return Some("project.create");
-    }
-    None
-}
-
 fn percent_decode(s: &str) -> String {
     let bytes = s.as_bytes();
     let mut out = Vec::with_capacity(bytes.len());
@@ -450,294 +280,7 @@ fn query_str(req: &Request, key: &str) -> String {
     String::new()
 }
 
-fn query_int(req: &Request, key: &str) -> Option<i64> {
-    query_str(req, key).parse().ok()
-}
-
-fn acl_rows(
-    ident: &angela::identity::Identity<'_>,
-    kind: &str,
-    name: &str,
-) -> (Vec<Value>, Option<i64>) {
-    let (owner, rows) = ident.grants_on(kind, name);
-    (rows, owner)
-}
-
 pub fn handle_api(state: &Arc<State>, req: &Request, out: &mut Stream<'_>) {
-    if req.path == "/api/profile" && req.method == "POST" {
-        // name is *not* here — it is fixed at login, and only re-creating
-        let Some(u) = crate::auth::current_user(req) else {
-            let _ = out.json(401, &serde_json::json!({"ok": false, "error": "login required"}));
-            return;
-        };
-        let body: Value = serde_json::from_slice(&req.body).unwrap_or(Value::Null);
-        let location = body.get("location").and_then(Value::as_str).unwrap_or("");
-        let ident = angela(state.config.port).state.store.identity();
-        let r = ident.set_location(u.id, location);
-        let _ = out.json(
-            if r.is_ok() { 200 } else { 400 },
-            &serde_json::json!({"ok": r.is_ok(), "error": r.err().unwrap_or_default()}),
-        );
-        return;
-    }
-    if req.path == "/api/me" && req.method == "GET" {
-        let ident = angela(state.config.port).state.store.identity();
-        let body = match crate::auth::current_session(req) {
-            Some((u, dev)) => {
-                // A masked session keeps its switcher (D4): the chip must
-                let real = crate::auth::real_actor(&ident, &u, &dev);
-                let caps: Vec<String> = if u.is_admin() {
-                    angela::identity::CAPABILITIES.iter().map(|s| s.to_string()).collect()
-                } else {
-                    ident.capabilities(u.id)
-                };
-                serde_json::json!({
-                    "user": { "id": u.id, "name": u.name, "displayName": u.display_name,
-                              "location": u.location,
-                              "admin": u.is_admin(), "disabled": u.disabled },
-                    "capabilities": caps,
-                    "masquerade": crate::auth::is_masked(&u, &dev),
-                    "realName": real.name,
-                    "shields": if crate::auth::instance().shields_down() { "down" } else { "up" },
-                })
-            }
-            None => serde_json::json!({ "user": null, "dev": true }),
-        };
-        let _ = out.json(200, &body);
-        return;
-    }
-    if req.path == "/api/admin/audit" && req.method == "GET" {
-        if !is_admin(req) {
-            let _ = out.json(403, &serde_json::json!({"ok": false, "error": "admin only"}));
-            return;
-        }
-        let n = query_int(req, "n").filter(|n| *n > 0).unwrap_or(100).min(1000) as usize;
-        let entries = angela(state.config.port).state.store.identity().audit_tail(n);
-        let _ = out.json(200, &serde_json::json!({"ok": true, "audit": entries}));
-        return;
-    }
-    if req.path == "/api/admin/perimeter" && req.method == "GET" {
-        if !is_admin(req) {
-            let _ = out.json(403, &serde_json::json!({"ok": false, "error": "admin only"}));
-            return;
-        }
-        let p = crate::auth::instance();
-        let _ = out.json(200, &serde_json::json!({
-            "ok": true,
-            "shields": if p.shields_down() { "down" } else { "up" },
-            "bans": p.bans(),
-            "kernelFirewall": p.firewall_ok(),
-        }));
-        return;
-    }
-    if req.path == "/api/admin/shields" && req.method == "POST" {
-        if !is_admin(req) {
-            let _ = out.json(403, &serde_json::json!({"ok": false, "error": "admin only"}));
-            return;
-        }
-        let body: Value = serde_json::from_slice(&req.body).unwrap_or(Value::Null);
-        let down = body.get("down").and_then(Value::as_bool).unwrap_or(false);
-        crate::auth::instance().set_shields_down(down);
-        let _ = out.json(200, &serde_json::json!({
-            "ok": true,
-            "shields": if down { "down" } else { "up" },
-        }));
-        return;
-    }
-    if req.path == "/api/admin/bans" {
-        if !is_admin(req) {
-            let _ = out.json(403, &serde_json::json!({"ok": false, "error": "admin only"}));
-            return;
-        }
-        let p = crate::auth::instance();
-        if req.method == "GET" {
-            let _ = out.json(200, &serde_json::json!({"ok": true, "bans": p.bans()}));
-        } else {
-            let body: Value = serde_json::from_slice(&req.body).unwrap_or(Value::Null);
-            let ip = body.get("ip").and_then(Value::as_str).unwrap_or("");
-            p.unban(ip);
-            let _ = out.json(200, &serde_json::json!({"ok": true, "bans": p.bans()}));
-        }
-        return;
-    }
-    if req.path == "/api/users" && req.method == "GET" {
-        let ident = angela(state.config.port).state.store.identity();
-        let admin_view = is_admin(req);
-        let me = actor_id(req);
-        let users: Vec<Value> = ident
-            .list_users()
-            .into_iter()
-            .map(|u| {
-                let mut row = serde_json::json!({
-                    "id": u.id, "name": u.name, "displayName": u.display_name,
-                    "admin": u.is_admin(), "disabled": u.disabled,
-                });
-                if admin_view || u.id == me {
-                    row["capabilities"] = serde_json::json!(ident.capabilities(u.id));
-                }
-                row
-            })
-            .collect();
-        let _ = out.json(200, &serde_json::json!({"ok": true, "users": users}));
-        return;
-    }
-    if req.path == "/api/users/capabilities" && req.method == "POST" {
-        if !is_admin(req) {
-            let _ = out.json(403, &serde_json::json!({"ok": false, "error": "admin only"}));
-            return;
-        }
-        let body: Value = serde_json::from_slice(&req.body).unwrap_or(Value::Null);
-        let ident = angela(state.config.port).state.store.identity();
-        let user_id = body.get("userId").and_then(Value::as_i64).unwrap_or(0);
-        let cap = body.get("capability").and_then(Value::as_str).unwrap_or("");
-        let grant = body.get("grant").and_then(Value::as_bool).unwrap_or(true);
-        let r = if grant {
-            ident.grant_capability(user_id, cap).map(|_| true)
-        } else {
-            ident.revoke_capability(user_id, cap);
-            Ok(true)
-        };
-        let _ = out.json(
-            if r.is_ok() { 200 } else { 400 },
-            &serde_json::json!({"ok": r.is_ok(), "error": r.err().unwrap_or_default()}),
-        );
-        return;
-    }
-    if req.path == "/api/users/allowlist" && req.method == "POST" {
-        if !is_admin(req) {
-            let _ = out.json(403, &serde_json::json!({"ok": false, "error": "admin only"}));
-            return;
-        }
-        let body: Value = serde_json::from_slice(&req.body).unwrap_or(Value::Null);
-        let ident = angela(state.config.port).state.store.identity();
-        let user_id = body.get("userId").and_then(Value::as_i64).unwrap_or(0);
-        let kind = body.get("kind").and_then(Value::as_str).unwrap_or("");
-        let patterns: Vec<String> = body
-            .get("patterns")
-            .and_then(Value::as_array)
-            .map(|a| {
-                a.iter()
-                    .filter_map(|x| x.as_str().map(str::to_string))
-                    .collect()
-            })
-            .unwrap_or_default();
-        let r = ident.set_allowlist(user_id, kind, &patterns);
-        let _ = out.json(
-            if r.is_ok() { 200 } else { 400 },
-            &serde_json::json!({"ok": r.is_ok(), "error": r.err().unwrap_or_default()}),
-        );
-        return;
-    }
-    if req.path == "/api/devices" && req.method == "GET" {
-        let ident = angela(state.config.port).state.store.identity();
-        let target = if is_admin(req) {
-            query_int(req, "userId").or_else(|| crate::auth::current_user(req).map(|u| u.id))
-        } else {
-            crate::auth::current_user(req).map(|u| u.id)
-        };
-        let devices: Vec<Value> = target
-            .map(|uid| {
-                ident
-                    .list_devices(uid)
-                    .into_iter()
-                    // them — so they do not appear here. (The `ip` check
-                    .filter(|d| {
-                        !d.fingerprint.starts_with("masquerade:by:") && d.ip != "masquerade"
-                    })
-                    .map(|d| serde_json::json!({
-                        "id": d.id, "fingerprint": d.fingerprint,
-                        "userAgent": d.user_agent, "ip": d.ip, "createdAt": d.created_at,
-                        "lastSeenAt": d.last_seen_at, "revoked": d.revoked,
-                    }))
-                    .collect()
-            })
-            .unwrap_or_default();
-        let _ = out.json(200, &serde_json::json!({"ok": true, "devices": devices}));
-        return;
-    }
-    if req.path == "/api/devices/revoke" && req.method == "POST" {
-        let body: Value = serde_json::from_slice(&req.body).unwrap_or(Value::Null);
-        let ident = angela(state.config.port).state.store.identity();
-        let device_id = body.get("deviceId").and_then(Value::as_i64).unwrap_or(0);
-        let scope = if is_admin(req) { 0 } else {
-            crate::auth::current_user(req).map(|u| u.id).unwrap_or(-1)
-        };
-        let r = ident.revoke_device(scope, device_id);
-        let _ = out.json(
-            if r.is_ok() { 200 } else { 400 },
-            &serde_json::json!({"ok": r.is_ok(), "error": r.err().unwrap_or_default()}),
-        );
-        return;
-    }
-    if req.path == "/api/acl" && req.method == "GET" {
-        let ident = angela(state.config.port).state.store.identity();
-        let (kind, name) = (query_str(req, "kind"), query_str(req, "name"));
-        let actor_id = actor_id(req);
-        if !ident.can(actor_id, &kind, &name, "grant") && !ident.can(actor_id, &kind, &name, "read") {
-            let _ = out.json(403, &serde_json::json!({"ok": false, "error": "no such resource"}));
-            return;
-        }
-        let (grants, owner) = acl_rows(&ident, &kind, &name);
-        let _ = out.json(200, &serde_json::json!({
-            "ok": true, "kind": kind, "name": name, "ownerId": owner, "grants": grants,
-        }));
-        return;
-    }
-    if req.path == "/api/acl/grant" && req.method == "POST" {
-        let body: Value = serde_json::from_slice(&req.body).unwrap_or(Value::Null);
-        let ident = angela(state.config.port).state.store.identity();
-        let s = |k: &str| body.get(k).and_then(Value::as_str).unwrap_or("").to_string();
-        let grantee = body.get("grantee").and_then(Value::as_i64).unwrap_or(0);
-        let grantee = if grantee > 0 {
-            grantee
-        } else {
-            ident.user_by_name(&s("grantee")).map(|u| u.id).unwrap_or(0)
-        };
-        let with_grant = body.get("withGrant").and_then(Value::as_bool).unwrap_or(false);
-        if ident.resource(&s("kind"), &s("name")).is_none() && actor_id(req) == 1 {
-            let _ = ident.ensure_resource(&s("kind"), &s("name"), 1);
-        }
-        let r = ident.grant(grantee, &s("kind"), &s("name"), &s("privilege"), actor_id(req), with_grant);
-        if r.is_ok() && s("kind") == "session" && matches!(s("privilege").as_str(), "read" | "post" | "seat") {
-            let name = s("grantee");
-            let handle = name.to_lowercase().replace(' ', "-");
-            let _ = angela(state.config.port).state.store.add_participant(
-                &s("name"),
-                "user",
-                &handle,
-                Some(&name),
-                None,
-                None,
-                "",
-                None,
-                None,
-            );
-        }
-        let _ = out.json(
-            if r.is_ok() { 200 } else { 403 },
-            &serde_json::json!({"ok": r.is_ok(), "error": r.err().unwrap_or_default()}),
-        );
-        return;
-    }
-    if req.path == "/api/acl/revoke" && req.method == "POST" {
-        let body: Value = serde_json::from_slice(&req.body).unwrap_or(Value::Null);
-        let ident = angela(state.config.port).state.store.identity();
-        let s = |k: &str| body.get(k).and_then(Value::as_str).unwrap_or("").to_string();
-        let grantee = body.get("grantee").and_then(Value::as_i64).unwrap_or(0);
-        let grantee = if grantee > 0 {
-            grantee
-        } else {
-            ident.user_by_name(&s("grantee")).map(|u| u.id).unwrap_or(0)
-        };
-        let r = ident.revoke_grant(actor_id(req), &s("kind"), &s("name"), grantee, &s("privilege"));
-        let _ = out.json(
-            if r.is_ok() { 200 } else { 403 },
-            &serde_json::json!({"ok": r.is_ok(), "error": r.err().unwrap_or_default()}),
-        );
-        return;
-    }
-
-    // ---- media : text and images only -----------------------
     if req.path == "/api/upload" && req.method == "POST" {
         let name = query_str(req, "name");
         let ext = name.rsplit('.').next().unwrap_or("").to_lowercase();
@@ -789,64 +332,6 @@ pub fn handle_api(state: &Arc<State>, req: &Request, out: &mut Stream<'_>) {
         return;
     }
 
-    if let Some(cap) = required_capability(req) {
-        if !actor_may(req, cap) {
-            let _ = out.json(403, &serde_json::json!({
-                "ok": false,
-                "error": format!("your account may not use `{cap}` (ask the admin)"),
-            }));
-            return;
-        }
-    }
-
-    if req.method == "POST" && req.path == "/api/chat" {
-        let body: Value = serde_json::from_slice(&req.body).unwrap_or(Value::Null);
-        if let Some(sid) = body.get("sessionId").and_then(Value::as_str).filter(|s| !s.is_empty()) {
-            if let Some(u) = crate::auth::current_user(req) {
-                if !session_open_to(Some(u.id), sid, "post") {
-                    let _ = out.json(403, &serde_json::json!({
-                        "ok": false, "error": "you may not post in this conversation",
-                    }));
-                    return;
-                }
-            }
-        }
-    }
-    if req.method == "POST"
-        && req.path.starts_with("/api/sessions/")
-        && req.path.ends_with("/participants")
-    {
-        if let Some(u) = crate::auth::current_user(req) {
-            let id = req
-                .path
-                .trim_start_matches("/api/sessions/")
-                .split('/')
-                .next()
-                .unwrap_or("");
-            if !id.is_empty() && !session_open_to(Some(u.id), id, "seat") {
-                let _ = out.json(403, &serde_json::json!({
-                    "ok": false, "error": "you may not seat participants in this conversation",
-                }));
-                return;
-            }
-        }
-    }
-    if req.method == "GET" && req.path.starts_with("/api/sessions/") {
-        if let Some(u) = crate::auth::current_user(req) {
-            let id = req
-                .path
-                .trim_start_matches("/api/sessions/")
-                .split('/')
-                .next()
-                .unwrap_or("");
-            if !id.is_empty() && id != "new" && !session_open_to(Some(u.id), id, "read") {
-                let _ = out.json(403, &serde_json::json!({
-                    "ok": false, "error": "no such conversation",
-                }));
-                return;
-            }
-        }
-    }
 
     if req.path == "/api/session/status" && req.method == "POST" {
         let body: Value = serde_json::from_slice(&req.body).unwrap_or(Value::Null);
@@ -894,30 +379,12 @@ pub fn handle_api(state: &Arc<State>, req: &Request, out: &mut Stream<'_>) {
         return;
     }
     if req.path == "/api/sessions" && req.method == "GET" {
-        let mut body = sessions(state.config.port);
-        // non-admin user sees only conversations they may read — or are
-        if let Some(u) = crate::auth::current_user(req) {
-            if !u.is_admin() {
-                if let Some(rows) = body.get_mut("sessions").and_then(Value::as_array_mut) {
-                    let names: Vec<String> = rows
-                        .iter()
-                        .filter_map(|s| s.get("id").and_then(Value::as_str).map(str::to_string))
-                        .collect();
-                    let keep: std::collections::HashSet<String> =
-                        visible_session_ids(Some(u.id), &names).into_iter().collect();
-                    rows.retain(|s| {
-                        s.get("id")
-                            .and_then(Value::as_str)
-                            .is_some_and(|id| keep.contains(id))
-                    });
-                }
-            }
-        }
+        let body = sessions(state.config.port);
         let _ = out.json(200, &body);
         return;
     }
     if req.path == "/api/events" && req.method == "GET" {
-        crate::events::stream(out, crate::auth::current_user(req).map(|u| u.id));
+        crate::events::stream(out);
         return;
     }
     if req.path == "/api/models" {
@@ -935,9 +402,7 @@ pub fn handle_api(state: &Arc<State>, req: &Request, out: &mut Stream<'_>) {
             Err(_) => (serde_json::json!([]), false),
         };
         if let Value::Object(m) = &mut body {
-            //  listing gate: only admin-visible rows travel per viewer.
-            let viewer = crate::auth::current_user(req).map(|u| u.id);
-            m.insert("sandboxes".into(), visible_sandboxes(viewer, sandboxes));
+            m.insert("sandboxes".into(), sandboxes);
             m.insert("sboxUp".into(), serde_json::json!(up));
         }
         let _ = out.json(200, &body);
@@ -954,25 +419,6 @@ pub fn handle_api(state: &Arc<State>, req: &Request, out: &mut Stream<'_>) {
         };
         let flag = |k: &str, dflt: bool| body.get(k).and_then(Value::as_bool).unwrap_or(dflt);
         let action = req.path.trim_start_matches("/api/targets/").trim_matches('/');
-        if action == "sandbox-remove" {
-            let viewer = crate::auth::current_user(req).map(|u| u.id);
-            let id = f("id");
-            let agent = angela(state.config.port)
-                .state
-                .store
-                .sandbox_rows()
-                .into_iter()
-                .find(|(_, _, cid)| *cid == id)
-                .map(|(_, agent, _)| agent)
-                .unwrap_or_default();
-            if !sandbox_visible(viewer, &agent) {
-                let _ = out.json(
-                    403,
-                    &serde_json::json!({"ok": false, "error": "you may not destroy this sandbox"}),
-                );
-                return;
-            }
-        }
         let result: Result<Value, String> = match action {
             "repo-add" => crate::hostgit::add_repo(&root, &f("path")),
             "repo-remove" => crate::hostgit::remove_repo(&root, &f("id")),
@@ -998,8 +444,7 @@ pub fn handle_api(state: &Arc<State>, req: &Request, out: &mut Stream<'_>) {
                     }
                     let store = &angela(state.config.port).state.store;
                     if let Ok(rows) = angela::sandbox::list_for_menu(store) {
-                        let viewer = crate::auth::current_user(req).map(|u| u.id);
-                        map.insert("sandboxes".into(), visible_sandboxes(viewer, rows));
+                        map.insert("sandboxes".into(), rows);
                     }
                 }
                 let _ = out.json(200, &v);
@@ -1012,26 +457,7 @@ pub fn handle_api(state: &Arc<State>, req: &Request, out: &mut Stream<'_>) {
     }
 
     if req.path == "/api/automations" && req.method == "GET" {
-        let mut body = crate::automations::list(&project_root());
-        // Only automations explicitly shared to this user .
-        if let Some(u) = crate::auth::current_user(req) {
-            if !u.is_admin() {
-                let ident = angela(state.config.port).state.store.identity();
-                if let Some(rows) = body.get_mut("automations").and_then(Value::as_array_mut) {
-                    let names: Vec<String> = rows
-                        .iter()
-                        .filter_map(|a| a.get("name").and_then(Value::as_str).map(str::to_string))
-                        .collect();
-                    let keep: std::collections::HashSet<String> =
-                        ident.readable(u.id, "automation", &names).into_iter().collect();
-                    rows.retain(|a| {
-                        a.get("name")
-                            .and_then(Value::as_str)
-                            .is_some_and(|n| keep.contains(n))
-                    });
-                }
-            }
-        }
+        let body = crate::automations::list(&project_root());
         let _ = out.json(200, &body);
         return;
     }
@@ -1076,7 +502,6 @@ pub fn handle_api(state: &Arc<State>, req: &Request, out: &mut Stream<'_>) {
         return;
     }
 
-    // from angela's router because they are a chat-app concept: angela
     if req.path.starts_with("/api/projects") {
         let root = project_root();
         let Ok(store) = angela::conv_store::ConvStore::new(root) else {
@@ -1084,39 +509,7 @@ pub fn handle_api(state: &Arc<State>, req: &Request, out: &mut Stream<'_>) {
             return;
         };
         if req.method == "GET" {
-            let mut body = store.projects_detail();
-            // : groups are organizational, never grants — group
-            if let Some(u) = crate::auth::current_user(req) {
-                if !u.is_admin() {
-                    let all: Vec<Value> = angela(state.config.port).state.store.list_meta();
-                    let names: Vec<String> = all
-                        .iter()
-                        .filter_map(|s| s.get("id").and_then(Value::as_str).map(str::to_string))
-                        .collect();
-                    let keep: std::collections::HashSet<String> =
-                        visible_session_ids(Some(u.id), &names).into_iter().collect();
-                    let mut counts: std::collections::HashMap<String, i64> =
-                        std::collections::HashMap::new();
-                    for s in &all {
-                        if s.get("id").and_then(Value::as_str).is_some_and(|id| keep.contains(id)) {
-                            let p = s.get("project").and_then(Value::as_str).unwrap_or("").to_string();
-                            *counts.entry(p).or_default() += 1;
-                        }
-                    }
-                    if let Some(rows) = body.get_mut("projects").and_then(Value::as_array_mut) {
-                        rows.retain(|p| {
-                            counts
-                                .contains_key(p.get("id").and_then(Value::as_str).unwrap_or(""))
-                        });
-                        for p in rows.iter_mut() {
-                            let key = p.get("id").and_then(Value::as_str).unwrap_or("");
-                            if let Some(n) = counts.get(key) {
-                                p["count"] = serde_json::json!(n);
-                            }
-                        }
-                    }
-                }
-            }
+            let body = store.projects_detail();
             let _ = out.json(200, &body);
             return;
         }
@@ -1200,7 +593,7 @@ pub fn handle_api(state: &Arc<State>, req: &Request, out: &mut Stream<'_>) {
         let _ = out.json(status, &body);
         return;
     }
-    let mut areq = ARequest {
+    let areq = ARequest {
         method: req.method.clone(),
         path: req.path.clone(),
         query: req.query.clone(),
@@ -1212,17 +605,7 @@ pub fn handle_api(state: &Arc<State>, req: &Request, out: &mut Stream<'_>) {
         body: req.body.clone(),
     };
     let chat = req.method == "POST" && req.path == "/api/chat";
-    let mut body: Value = if chat { serde_json::from_slice(&req.body).unwrap_or(Value::Null) } else { Value::Null };
-    // Who said it comes from the session, never from the client body
-    // : a multi-human room's transcript is only truthful if the
-    if chat {
-        if let Some(u) = crate::auth::current_user(req) {
-            if let Some(obj) = body.as_object_mut() {
-                obj.insert("from".into(), Value::String(u.name));
-            }
-            areq.body = serde_json::to_vec(&body).unwrap_or_default();
-        }
-    }
+    let body: Value = if chat { serde_json::from_slice(&req.body).unwrap_or(Value::Null) } else { Value::Null };
     let session_id = body.get("sessionId").and_then(Value::as_str).unwrap_or_default().to_string();
     let prompt = body.get("content").and_then(Value::as_str).unwrap_or_default().to_string();
     let baseline = if chat && !session_id.is_empty() {
@@ -1232,14 +615,6 @@ pub fn handle_api(state: &Arc<State>, req: &Request, out: &mut Stream<'_>) {
         out, streaming: false, ended: false, chat, session_id, prompt, baseline,
         turn_id: None, disconnected: false, port: state.config.port,
         assistant_filter: crate::assistant_text::StreamFilter::default(),
-        claim_owner: if req.path == "/api/session/new"
-            || (chat && body.get("sessionId").and_then(Value::as_str).unwrap_or("").is_empty())
-        {
-            Some(actor_id(req))
-        } else {
-            None
-        },
-        viewer: crate::auth::current_user(req).map(|u| u.id),
     };
     angela(state.config.port).dispatch(&areq, &mut sink);
     sink.end();
@@ -1308,32 +683,5 @@ mod latest_event_tests {
         add_token_counts(&mut sessions, &db);
         assert_eq!(sessions["sessions"][0]["totalTokens"], 4800);
         assert!(sessions["sessions"][1].get("totalTokens").is_none());
-    }
-}
-
-#[cfg(test)]
-mod sandbox_gate_tests {
-    use super::*;
-
-    ///  listing gate: a sandbox holds its agent's work, so only the
-    /// admin-only.
-    #[test]
-    fn a_sandbox_is_visible_only_to_whoever_may_edit_its_agent() {
-        let store = angela::conv_store::ConvStore::memory("/tmp/sandbox-gate-test").unwrap();
-        let ident = store.identity();
-        let bob = ident.create_user("Bob", "Bob").unwrap();
-        let alice = ident.create_user("alice", "Alice").unwrap();
-        ident.ensure_resource("agent", "video", bob.id).unwrap();
-        ident
-            .grant(alice.id, "agent", "video", "edit", bob.id, false)
-            .unwrap();
-
-        assert!(sandbox_visible_with(&ident, None, ""));
-        assert!(sandbox_visible_with(&ident, Some(bob.id), "video"));
-        assert!(sandbox_visible_with(&ident, Some(bob.id), ""));
-
-        assert!(sandbox_visible_with(&ident, Some(alice.id), "video"));
-        assert!(!sandbox_visible_with(&ident, Some(alice.id), "chewy"));
-        assert!(!sandbox_visible_with(&ident, Some(alice.id), ""));
     }
 }

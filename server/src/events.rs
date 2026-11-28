@@ -2,7 +2,7 @@
 use rustex1_devserver::{State, Stream};
 use serde_json::{json, Value};
 use std::sync::{Arc, Condvar, Mutex, OnceLock};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -106,60 +106,6 @@ fn sandbox_delta(previous: &Value, current: &Value) -> Value {
         map.insert("sboxUp".into(), current.get("sboxUp").cloned().unwrap_or(Value::Bool(false)));
     }
     patch
-}
-
-/// diff, so a delta can never name one either. Admins and the dev zone see
-fn sandboxes_visible_to(viewer: Option<i64>, value: &Value) -> Value {
-    let mut out = value.clone();
-    let Some(rows) = out.get("sandboxes").and_then(Value::as_array).cloned() else {
-        return out;
-    };
-    let keep: Vec<Value> = rows
-        .into_iter()
-        .filter(|r| {
-            crate::api::sandbox_visible(
-                viewer,
-                r.get("agent").and_then(Value::as_str).unwrap_or_default(),
-            )
-        })
-        .collect();
-    if let Some(map) = out.as_object_mut() {
-        map.insert("sandboxes".into(), Value::Array(keep));
-    }
-    out
-}
-
-/// invisible  — dropped before the diff, so a delta can never
-fn visible_to(viewer: Option<i64>, value: &Value) -> Value {
-    let Some(uid) = viewer else {
-        return value.clone();
-    };
-    let Some(rows) = value.get("sessions").and_then(Value::as_array) else {
-        return value.clone();
-    };
-    let names: Vec<String> = rows
-        .iter()
-        .filter_map(|r| r.get("id").and_then(Value::as_str).map(str::to_string))
-        .collect();
-    let keep: HashSet<String> = crate::api::visible_session_ids(Some(uid), &names)
-        .into_iter()
-        .collect();
-    let mut out = value.clone();
-    out["sessions"] = Value::Array(
-        rows.iter()
-            .filter(|r| {
-                r.get("id")
-                    .and_then(Value::as_str)
-                    .is_some_and(|id| keep.contains(id))
-            })
-            .cloned()
-            .collect(),
-    );
-    out
-}
-
-fn turn_visible(viewer: Option<i64>, session_id: &str) -> bool {
-    crate::api::session_open_to(viewer, session_id, "read")
 }
 
 pub fn start(state: Arc<State>) {
@@ -284,7 +230,7 @@ fn approval_delta(previous: &Value, current: &Value) -> Value {
 }
 
 /// A reconnect receives the latest snapshot before change-only updates resume.
-pub fn stream(out: &mut Stream<'_>, viewer: Option<i64>) {
+pub fn stream(out: &mut Stream<'_>) {
     if out
         .start(
             200,
@@ -318,20 +264,8 @@ pub fn stream(out: &mut Stream<'_>, viewer: Option<i64>) {
             if guard.versions[i] != seen[i] {
                 seen[i] = guard.versions[i];
                 if let Some(value) = &guard.values[i] {
-                    let (old_f, new_f) = match *name {
-                        "sessions" => (
-                            previous[i].as_ref().map(|p| visible_to(viewer, p)),
-                            visible_to(viewer, value),
-                        ),
-                        "sandboxes" => (
-                            previous[i]
-                                .as_ref()
-                                .map(|p| sandboxes_visible_to(viewer, p)),
-                            sandboxes_visible_to(viewer, value),
-                        ),
-                        _ => (previous[i].clone(), value.clone()),
-                    };
-                    let (event, data) = match (&old_f, *name) {
+                    let new_f = value.clone();
+                    let (event, data) = match (&previous[i], *name) {
                         (Some(old), "sessions") => {
                             ("sessions-delta", delta(old, &new_f, "sessions"))
                         }
@@ -346,9 +280,6 @@ pub fn stream(out: &mut Stream<'_>, viewer: Option<i64>) {
         }
         turn_version = guard.turn_version;
         for (id, turn) in &guard.turns {
-            if !turn_visible(viewer, &turn.session_id) {
-                continue;
-            }
             if let Some(offset) = turns_seen.get_mut(id) {
                 for (index, row) in turn.rows.iter().enumerate().skip(*offset) {
                     let data = json!({"turnId":id.to_string(), "sessionId":turn.session_id, "seq":index, "row":row});
@@ -395,7 +326,7 @@ mod tests {
             let listener = TcpListener::bind("127.0.0.1:0").unwrap();
             let client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
             let (mut server, _) = listener.accept().unwrap();
-            std::thread::spawn(move || { stream(&mut Stream::new(&mut server), None); });
+            std::thread::spawn(move || { stream(&mut Stream::new(&mut server)); });
             client.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
             client
         }

@@ -45,7 +45,7 @@ pub fn automations_menu_live() -> Node {
             rail_head::head(
                 "Automations",
                 "timer",
-                Some(("New automation", &format!("{st}.createTarget('automation')"), "$store.ident.can('automation.create')")),
+                Some(("New automation", &format!("{st}.createTarget('automation')"), "")),
                 Some("automations"),
             ),
             m("div").class("automation-list").show("$store.home.automationsOpen").kids(vec![

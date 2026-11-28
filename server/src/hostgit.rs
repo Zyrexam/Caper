@@ -58,24 +58,46 @@ pub fn check_path(raw: &str) -> Result<PathBuf, String> {
     if t.is_empty() {
         return Err("a repo needs an absolute path".into());
     }
-    if !t.starts_with('/') {
+    let t = unverbatim(t);
+    let b = t.as_bytes();
+    let drive = b.len() >= 3
+        && b[0].is_ascii_alphabetic()
+        && b[1] == b':'
+        && (b[2] == b'\\' || b[2] == b'/');
+    if !(t.starts_with('/') || t.starts_with("\\\\") || drive) {
         return Err(format!("path must be absolute: {t}"));
     }
-    if t.contains(':') || t.contains(',') {
+    if breaks_mount_spec(&t) {
         return Err("path cannot contain ':' or ',' — a mount spec is delimited by both".into());
     }
-    let p = PathBuf::from(t);
-    let canon = p
+    let canon = Path::new(&t)
         .canonicalize()
         .map_err(|_| format!("no such directory: {t}"))?;
     if !canon.is_dir() {
         return Err(format!("not a directory: {t}"));
     }
-    let s = canon.to_string_lossy().to_string();
-    if s.contains(':') || s.contains(',') {
+    let canon = unverbatim(&canon.to_string_lossy());
+    if breaks_mount_spec(&canon) {
         return Err("resolved path contains ':' or ','".into());
     }
-    Ok(canon)
+    Ok(PathBuf::from(canon))
+}
+
+/// Windows canonical paths are verbatim: `\\?\C:\x` or `\\?\UNC\srv\share`.
+fn unverbatim(s: &str) -> String {
+    if let Some(rest) = s.strip_prefix("\\\\?\\UNC\\") {
+        format!("\\\\{rest}")
+    } else {
+        s.strip_prefix("\\\\?\\").unwrap_or(s).to_string()
+    }
+}
+
+/// The only `:` a path may hold is a drive colon at index 1.
+fn breaks_mount_spec(s: &str) -> bool {
+    let b = s.as_bytes();
+    let drive = b.len() >= 2 && b[0].is_ascii_alphabetic() && b[1] == b':';
+    s.char_indices()
+        .any(|(i, c)| c == ',' || (c == ':' && !(drive && i == 1)))
 }
 
 fn is_git_dir(p: &Path) -> bool {

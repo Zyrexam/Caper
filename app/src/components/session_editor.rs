@@ -174,15 +174,6 @@ pub fn panel() -> Node {
                 .attr("title", "Save")
                 .on("click", &format!("{ST}.save()"))
                 .child(m("span").child(lit("Save"))),
-            // dialog owns the grants; this only opens it.
-            m("button")
-                .class("ae-btn")
-                .attr("type", "button")
-                .on("click", "$store.share.openForActive()")
-                .kids(vec![
-                    Node::icon("users-three").class("ph ph-users-three"),
-                    m("span").child(lit("Share…")),
-                ]),
             m("span").class("spacer"),
             m("button")
                 .class("ae-btn danger")

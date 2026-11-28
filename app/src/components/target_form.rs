@@ -375,15 +375,6 @@ pub fn panel() -> Node {
                     .text(&format!(
                         "({ST}.busy ? 'Working…' : ({ST}.mode === 'edit' ? ({ST}.kind === 'automation' ? 'Save' : 'Rename') : 'Create'))"
                     )),
-                m("button")
-                    .class("ae-btn")
-                    .attr("type", "button")
-                    .show(&format!("({ST}.mode === 'edit' && ['project', 'automation'].includes({ST}.kind))"))
-                    .on("click", "$store.share.open($store.tform.kind, $store.tform.name)")
-                    .kids(vec![
-                        Node::icon("users-three").class("ph ph-users-three"),
-                        m("span").child(lit("Share…")),
-                    ]),
                 m("span").class("spacer"),
                 m("button")
                     .class("ae-btn danger")
@@ -451,7 +442,6 @@ fn open_with(kind: &str, mode: &str, store: &str, name: &str) {
     let s = mjs::store_ref(STORE);
     js::set_num(&s, "requestId", js::get_num(&s, "requestId") + 1.0);
     js::set_bool(&s, "open", true);
-    js::set_bool(&mjs::store_ref("ident"), "panelOpen", false);
     js::set_bool(&mjs::store_ref("settings"), "open", false);
     js::set_str(&s, "kind", kind);
     js::set_str(&s, "mode", mode);

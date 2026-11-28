@@ -50,7 +50,7 @@ pub fn agents_menu_live() -> Node {
             rail_head::head(
                 "Agents",
                 "robot",
-                Some(("Define a new agent", &format!("{st}.newAgent()"), "$store.ident.can('agent.create')")),
+                Some(("Define a new agent", &format!("{st}.newAgent()"), "")),
                 Some("agents"),
             ),
             m("div").class("agent-list").show("$store.home.agentsOpen").kids(vec![
