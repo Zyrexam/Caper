@@ -20,6 +20,10 @@ a Rust development server, and an embedded agent harness.
 - A component-driven UI and `/storybook` design guide
 - Windows and Unix development scripts
 
+## Favicon
+
+Caper-berry artwork. Source `ui/assets/favicon-source.png`; generated `favicon.ico`, `favicon-16.png`, `favicon-32.png`, `favicon.png`, and `apple-touch-icon.png`. Wired in `ui/index.html`. Scratch copy: `.scratch/favicons/caper-berry-favicon.png`.
+
 ## Stack
 
 | Layer | Technology |
