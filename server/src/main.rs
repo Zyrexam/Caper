@@ -6,6 +6,7 @@ mod auth;
 mod automations;
 mod events;
 mod hostgit;
+mod local_projects;
 mod sbox;
 
 use rustex1_devserver::{args_to_config, Config, Server};

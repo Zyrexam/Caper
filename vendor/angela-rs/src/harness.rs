@@ -354,6 +354,19 @@ pub const SANDBOX_SERVER: &str = "sandbox";
 /// cannot find.
 pub const SANDBOX_MOUNT: &str = "/work";
 
+/// The directory this session's file and shell tools should root at:
+/// `projectRoot` recorded on the session when it differs from `fallback`
+/// (e.g. a session created inside a local project) and names an existing
+/// directory, else `fallback`. `.caper` state stays in `store.project_root`.
+fn session_project_root(store: &ConvStore, session_id: &str, fallback: &str) -> String {
+    store
+        .load(session_id)
+        .and_then(|s| s.get("projectRoot").and_then(Value::as_str).map(str::to_owned))
+        .map(|p| p.trim().to_string())
+        .filter(|p| !p.is_empty() && p != fallback && std::path::Path::new(p).is_dir())
+        .unwrap_or_else(|| fallback.to_string())
+}
+
 /// Where sbox serves one sandbox's tools.
 ///
 /// The `exec` facade, not `mcp`: `exec` is the guest's file-and-shell
@@ -887,6 +900,9 @@ pub fn run_turn(
             .filter(|m| !m.trim().is_empty()))
         .unwrap_or_else(|| DEFAULT_MODEL.into());
     let session_id = resolve_session(store, tabs, &req)?;
+    // Per-session project context: a session inside a local project works
+    // in that project's directory; otherwise the server project root.
+    let project_root = session_project_root(store, &session_id, project_root);
     // Stoppable from here on. The session id is the key the stop button
     // uses, so this is the earliest point the turn *can* be registered —
     // and `Cancels::begin` hands back an already-thrown switch if the user
@@ -963,7 +979,7 @@ pub fn run_turn(
         .and_then(|s| s.get("contextWindow").and_then(|v| v.as_u64()));
 
     // Tools come up before the model is told they exist.
-    let root = std::path::Path::new(project_root);
+    let root = std::path::Path::new(project_root.as_str());
     // Where this agent's files and shell begin: its own workspace root if it
     // named one, else the project root.
     let file_root = file_root_for(def, root);
@@ -1395,6 +1411,24 @@ pub fn run_turn(
 
 #[cfg(test)]
 mod tests {
+    /// A session created inside a local project roots at that project's
+    /// directory; an unknown or non-directory `projectRoot` falls back.
+    #[test]
+    fn session_project_root_prefers_existing_project_directory() {
+        let s = crate::conv_store::ConvStore::memory("/tmp/proj-root").unwrap();
+        let id = s.create(crate::session_store::NewSession::default()).unwrap()["id"]
+            .as_str().unwrap().to_string();
+        // No explicit projectRoot → server fallback.
+        assert_eq!(session_project_root(&s, &id, "/srv"), "/srv");
+        // A real directory on disk wins.
+        let dir = std::env::temp_dir().to_string_lossy().to_string();
+        s.update_meta(&id, serde_json::json!({"projectRoot": dir}).as_object().unwrap().clone());
+        assert_eq!(session_project_root(&s, &id, "/srv"), dir);
+        // A non-directory path falls back.
+        s.update_meta(&id, serde_json::json!({"projectRoot": "/no/such/dir/at/all"}).as_object().unwrap().clone());
+        assert_eq!(session_project_root(&s, &id, "/srv"), "/srv");
+    }
+
     /// End to end against a **live** sandbox:
     /// `SBOX_TEST_ID=<ready id> cargo test -- --ignored swapped_for_sandbox`
     ///
@@ -1827,6 +1861,8 @@ pub fn run_round(
 
     let roster = store.participants(&conv);
     let header = store.load(&conv).unwrap_or(Value::Null);
+    // Per-session project context (see `session_project_root` in `run_turn`).
+    let project_root = session_project_root(store, &conv, project_root);
 
     // Nobody to answer. The message is already durable, so this is a state
     // the user can fix and then re-send from — but silence with no
@@ -1960,7 +1996,7 @@ pub fn run_round(
             {
                 continue;
             }
-            let root = std::path::Path::new(project_root);
+            let root = std::path::Path::new(project_root.as_str());
             // A participant's own workspace root, or the project root when it
             // named none. The sandbox, when assigned, supersedes it for file
             // and shell access — this is just the root the participant's
