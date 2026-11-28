@@ -35,28 +35,42 @@ fn migrate_legacy_store(root: &std::path::Path) {
 }
 
 pub(crate) fn angela(port: u16) -> &'static AngelaServer {
-    use std::sync::OnceLock;
-    static SERVER: OnceLock<AngelaServer> = OnceLock::new();
-    SERVER.get_or_init(|| {
-        let root = project_root();
-        migrate_legacy_store(&root);
-        let mut state = AppState::new(&root, port).expect("angela state");
-        // a typed prompt. Wired here because the bridging (the event feed)
-        state.prompt_sender = Some(Arc::new(|session: &str, content: String, agent: String, model: String| {
-            crate::automations::submit_prompt(session, content, agent, model);
-        }));
-        state.seat_sender = Some(Arc::new(|_session: &str| {
-            crate::events::bump_sessions();
-        }));
-        angela::sandbox::set_backend(Box::new(crate::sbox::SboxBackend {
-            root: root.clone(),
-        }));
-        eprintln!(
-            "angela embedded · conversations in {}/.caper/conversations.db",
-            root.display()
-        );
-        AngelaServer::new(Arc::new(state))
-    })
+    use std::sync::{Mutex, OnceLock};
+    // One embedded server per project root. The shipped app only ever uses
+    // its one workspace root; keying by root keeps independent callers (and
+    // tests) from sharing one `.caper` store. `Box::leak` because callers
+    // receive `&'static`.
+    static SERVERS: OnceLock<Mutex<std::collections::HashMap<std::path::PathBuf, &'static AngelaServer>>> = OnceLock::new();
+    let map = SERVERS.get_or_init(|| Mutex::new(std::collections::HashMap::new()));
+    let root = project_root();
+    let mut guard = map.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(server) = guard.get(&root) {
+        return server;
+    }
+    let server = build_angela_server(&root, port);
+    let leaked: &'static AngelaServer = Box::leak(Box::new(server));
+    guard.insert(root.clone(), leaked);
+    leaked
+}
+
+fn build_angela_server(root: &std::path::Path, port: u16) -> AngelaServer {
+    migrate_legacy_store(root);
+    let mut state = AppState::new(root, port).expect("angela state");
+    // a typed prompt. Wired here because the bridging (the event feed)
+    state.prompt_sender = Some(Arc::new(|session: &str, content: String, agent: String, model: String| {
+        crate::automations::submit_prompt(session, content, agent, model);
+    }));
+    state.seat_sender = Some(Arc::new(|_session: &str| {
+        crate::events::bump_sessions();
+    }));
+    angela::sandbox::set_backend(Box::new(crate::sbox::SboxBackend {
+        root: root.to_path_buf(),
+    }));
+    eprintln!(
+        "angela embedded · conversations in {}/.caper/conversations.db",
+        root.display()
+    );
+    AngelaServer::new(Arc::new(state))
 }
 
 fn chat_messages(store: &angela::conv_store::ConvStore, id: &str) -> Vec<Value> {
@@ -278,6 +292,36 @@ fn query_str(req: &Request, key: &str) -> String {
         }
     }
     String::new()
+}
+
+/// Create a session filed under a project. `project` (explicit) or, when
+/// absent, the active local project names the folder; a local project added
+/// from a directory sets `projectRoot` so edits happen in its context.
+/// Single local user — no owner, grant, capability, or sharing checks.
+fn create_session_in_project(
+    store: &angela::conv_store::ConvStore,
+    root: &std::path::Path,
+    body: &Value,
+) -> Result<Value, String> {
+    let str_field = |k: &str| body.get(k).and_then(Value::as_str).map(str::trim).filter(|s| !s.is_empty()).map(str::to_string);
+    let project = str_field("project").or_else(|| crate::local_projects::active_name(root));
+    let project_root_dir = str_field("projectRoot")
+        .or_else(|| str_field("project_root"))
+        .or_else(|| project.as_deref().and_then(|n| crate::local_projects::path_for(root, n).map(|p| p.to_string_lossy().to_string())));
+    let s = store.create(angela::session_store::NewSession {
+        agent: str_field("agent"),
+        model: str_field("model"),
+        title: str_field("title"),
+        ..Default::default()
+    }).map_err(|e| e.to_string())?;
+    let id = s.get("id").and_then(Value::as_str).unwrap_or_default().to_string();
+    let mut patch = serde_json::Map::new();
+    if let Some(p) = project.filter(|p| !p.is_empty()) {
+        let _ = store.create_project(&p); // a session inside it implies the folder exists
+        patch.insert("project".into(), Value::String(p));
+    }
+    if let Some(pr) = project_root_dir.filter(|p| !p.is_empty()) { patch.insert("projectRoot".into(), Value::String(pr)); }
+    if patch.is_empty() { Ok(s) } else { Ok(store.update_meta(&id, patch).unwrap_or(s)) }
 }
 
 pub fn handle_api(state: &Arc<State>, req: &Request, out: &mut Stream<'_>) {
@@ -504,12 +548,30 @@ pub fn handle_api(state: &Arc<State>, req: &Request, out: &mut Stream<'_>) {
 
     if req.path.starts_with("/api/projects") {
         let root = project_root();
-        let Ok(store) = angela::conv_store::ConvStore::new(root) else {
+        let Ok(store) = angela::conv_store::ConvStore::new(&root) else {
             let _ = out.json(500, &serde_json::json!({"error": "no conversation store"}));
             return;
         };
         if req.method == "GET" {
-            let body = store.projects_detail();
+            let mut body = store.projects_detail();
+            // Local projects (directories on disk) and the active choice,
+            // alongside named folders. No per-project sharing scoping.
+            let local = crate::local_projects::projects(&root);
+            if let Some(Value::Array(rows)) = body.get_mut("projects") {
+                for row in rows.iter_mut() {
+                    let name = row.get("name").and_then(Value::as_str).unwrap_or_default().to_string();
+                    if let Some(p) = local.iter().find(|p| p.name == name) {
+                        if let Some(obj) = row.as_object_mut() {
+                            obj.insert("path".into(), Value::String(p.path.clone()));
+                            obj.insert("local".into(), Value::Bool(true));
+                        }
+                    }
+                }
+            }
+            match crate::local_projects::active_name(&root) {
+                Some(name) => body["activeProject"] = Value::String(name),
+                None => body["activeProject"] = Value::Null,
+            }
             let _ = out.json(200, &body);
             return;
         }
@@ -530,9 +592,41 @@ pub fn handle_api(state: &Arc<State>, req: &Request, out: &mut Stream<'_>) {
             .trim_matches('/')
             .to_string();
         let result: Result<Value, String> = match action.as_str() {
-            "" | "create" => store.create_project(&field("name")).map(|n| {
-                serde_json::json!({"name": n, "select": n, "selectKind": "project"})
-            }),
+            "" | "create" => {
+                // A named folder, or — with `path` — a local project/repo
+                // rooted at an existing local directory (single local user;
+                // no sharing scoping). The named folder is registered either
+                // way, so sessions can be filed under it.
+                let raw_path = field("path");
+                if raw_path.trim().is_empty() {
+                    store.create_project(&field("name")).map(|n| {
+                        serde_json::json!({"name": n, "select": n, "selectKind": "project"})
+                    })
+                } else {
+                    crate::local_projects::add(&root, &field("name"), &raw_path).and_then(|p| {
+                        store.create_project(&p.name)?;
+                        Ok(serde_json::json!({
+                            "name": p.name, "path": p.path,
+                            "select": p.name, "selectKind": "project",
+                        }))
+                    })
+                }
+            }
+            // Choose the active project; sessions created while it is active
+            // are created inside it. An empty name clears the choice.
+            "select" => {
+                let name = { let a = field("name"); if a.trim().is_empty() { field("project") } else { a } };
+                crate::local_projects::set_active(&root, &name).map(|p| {
+                    if let Some(p) = &p { let _ = store.create_project(&p.name); }
+                    match p {
+                        Some(p) => serde_json::json!({
+                            "activeProject": p.name, "name": p.name,
+                            "path": p.path, "select": p.name, "selectKind": "project",
+                        }),
+                        None => serde_json::json!({"activeProject": Value::Null}),
+                    }
+                })
+            }
             "rename" => store
                 .rename_project(&field("from"), &field("to"))
                 .map(|n| serde_json::json!({"name": n})),
@@ -591,6 +685,20 @@ pub fn handle_api(state: &Arc<State>, req: &Request, out: &mut Stream<'_>) {
             None => (404, serde_json::json!({"ok": false, "error": "session not found"})),
         };
         let _ = out.json(status, &body);
+        return;
+    }
+    // Ticket 04: a session created inside a project lands in it. The active
+    // local project (or an explicit `project`) names the folder the session
+    // is filed under, and — for a local project added from a directory —
+    // `projectRoot` points session edits at that directory. Nothing here
+    // adds user scoping or sharing.
+    if req.path == "/api/session/new" && req.method == "POST" {
+        let body: Value = serde_json::from_slice(&req.body).unwrap_or_else(|_| serde_json::json!({}));
+        let server = angela(state.config.port);
+        match create_session_in_project(&server.state.store, &project_root(), &body) {
+            Ok(session) => { let _ = out.json(200, &serde_json::json!({ "ok": true, "session": session })); }
+            Err(e) => { let _ = out.json(500, &serde_json::json!({ "error": e })); }
+        }
         return;
     }
     let areq = ARequest {
@@ -798,5 +906,54 @@ mod session_crud_tests {
             assert_eq!(n, 0, "{table} still holds rows for deleted session");
         }
         let _ = std::fs::remove_dir_all(&root);
+    }
+}
+
+/// Ticket 04: sessions created inside the active local project land in it;
+/// edits use the selected project context. Single local user, no sharing.
+#[cfg(test)]
+mod local_projects_tests {
+    use super::*;
+
+    #[test]
+    fn session_created_inside_selected_project_uses_its_context() {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("caper-session-in-project-{nanos}"));
+        let repo = std::env::temp_dir().join(format!("caper-session-repo-{nanos}"));
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::create_dir_all(&repo).unwrap();
+        let store = angela::conv_store::ConvStore::memory(&root).unwrap();
+
+        // No active project -> session lands nowhere in particular, root unchanged.
+        let plain = create_session_in_project(&store, &root, &serde_json::json!({})).unwrap();
+        assert_eq!(plain["project"], "");
+        assert_eq!(plain["projectRoot"].as_str().unwrap(), store.project_root.to_string_lossy());
+
+        // Add a local project and choose it; created sessions land inside it
+        // with `projectRoot` at the selected directory.
+        let added = crate::local_projects::add(&root, "", &repo.to_string_lossy()).unwrap();
+        store.create_project(&added.name).unwrap();
+        crate::local_projects::set_active(&root, &added.name).unwrap();
+
+        let one = create_session_in_project(&store, &root, &serde_json::json!({})).unwrap();
+        let two = create_session_in_project(&store, &root, &serde_json::json!({})).unwrap();
+        assert_eq!(one["project"], added.name.as_str());
+        assert_eq!(two["project"], added.name.as_str());
+        assert_ne!(one["id"], two["id"]);
+        let edit_root = one["projectRoot"].as_str().unwrap();
+        assert!(std::path::Path::new(edit_root).is_dir());
+        assert_eq!(std::path::Path::new(edit_root).file_name().unwrap().to_string_lossy(), repo.file_name().unwrap().to_string_lossy());
+
+        // An explicit `project` on the request overrides the active one.
+        let other = create_session_in_project(&store, &root, &serde_json::json!({"project": "elsewhere"})).unwrap();
+        assert_eq!(other["project"], "elsewhere");
+        // ...and doesn't disturb the persisted active selection.
+        assert_eq!(crate::local_projects::active_name(&root).as_deref(), Some(added.name.as_str()));
+
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&repo);
     }
 }

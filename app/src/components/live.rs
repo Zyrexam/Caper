@@ -1593,6 +1593,11 @@ fn pick_target(_this: JsValue, args: js_sys::Array) -> JsValue {
         }
     }
     if field == "projectId" {
+        // Choosing a project is the active project for what's created next,
+        // not just a tag on the open session; the server remembers it.
+        let sel = js::obj();
+        js::set_str(&sel, "name", &value);
+        api::project_action("select", &sel.into(), |_| {});
         let id = js::get_str(&s, "activeId");
         if !id.is_empty() {
             js::set_str(&js::get(&s, "session"), "project", &value);
