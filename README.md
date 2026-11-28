@@ -22,7 +22,9 @@ a Rust development server, and an embedded agent harness.
 
 ## Favicon
 
-Caper-berry artwork. Source `ui/assets/favicon-source.png`; generated `favicon.ico`, `favicon-16.png`, `favicon-32.png`, `favicon.png`, and `apple-touch-icon.png`. Wired in `ui/index.html`. Scratch copy: `.scratch/favicons/caper-berry-favicon.png`.
+![Caper berry chat mark](ui/assets/favicon-source.png)
+
+Transparent Caper berry chat mark. Source `ui/assets/favicon-source.png`; generated `favicon.ico`, `favicon-16.png`, `favicon-32.png`, `favicon.png`, and `apple-touch-icon.png` with `ui/assets/generate-favicon.ps1`. Wired in `ui/index.html`.
 
 ## Stack
 
