@@ -685,3 +685,118 @@ mod latest_event_tests {
         assert!(sessions["sessions"][1].get("totalTokens").is_none());
     }
 }
+
+/// Ticket 02: session CRUD is single-user — no login, owner, grant,
+/// capability, admin, or sharing checks; delete removes the session and
+/// everything hanging off it.
+#[cfg(test)]
+mod session_crud_tests {
+    use super::*;
+    use std::io::{Read, Write};
+
+    fn temp_root(tag: &str) -> std::path::PathBuf {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("caper-session-crud-{tag}-{nanos}"));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    /// One request through the real handler; returns (status, body).
+    fn call(state: &Arc<State>, method: &str, path: &str, body: &str) -> (u16, Value) {
+        let req = Request {
+            method: method.into(),
+            path: path.into(),
+            query: String::new(),
+            body: body.as_bytes().to_vec(),
+            ..Default::default()
+        };
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let mut client = std::net::TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+        let mut response = Vec::new();
+        {
+            let (mut server_side, _) = listener.accept().unwrap();
+            let mut stream = Stream::new(&mut server_side);
+            handle_api(state, &req, &mut stream);
+        }
+        client.read_to_end(&mut response).unwrap();
+        client.flush().ok();
+        let text = String::from_utf8_lossy(&response);
+        let status = text
+            .split_whitespace()
+            .nth(1)
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0);
+        let payload = text.split_once("\r\n\r\n").map(|(_, rest)| rest).unwrap_or("");
+        // Chunked framing: drop the size lines and the 0-length terminator.
+        let body = payload.split("\r\n0").next().unwrap_or(payload);
+        let body = body.split_once("\r\n").map(|(_, rest)| rest).unwrap_or(body);
+        (status, serde_json::from_str(body).unwrap_or(Value::Null))
+    }
+
+    fn session_count(state: &Arc<State>) -> usize {
+        call(state, "GET", "/api/sessions", "")
+            .1
+            .get("sessions")
+            .and_then(Value::as_array)
+            .map(Vec::len)
+            .unwrap_or(usize::MAX)
+    }
+
+    #[test]
+    fn session_crud_needs_no_identity_and_delete_removes_everything() {
+        let root = temp_root("crud");
+        std::env::set_var("CAPER_ROOT", &root);
+        let config = rustex1_devserver::Config::discover(&root);
+        let state = Arc::new(State::new(config, std::collections::HashMap::new()));
+
+        // Create two sessions; no credentials, owner, grant, or capability sent.
+        let first = call(&state, "POST", "/api/session/new", "{}");
+        assert_eq!(first.0, 200, "create failed: {first:?}");
+        let id = first.1["session"]["id"].as_str().unwrap().to_string();
+        let second = call(&state, "POST", "/api/session/new", r#"{"title":"other"}"#);
+        assert_eq!(second.0, 200);
+        let other = second.1["session"]["id"].as_str().unwrap().to_string();
+
+        // List shows both; each session holds its own data.
+        assert_eq!(session_count(&state), 2);
+        // Append an event to `id`, leave `other` empty.
+        let appended = call(
+            &state,
+            "POST",
+            "/api/session/status",
+            &format!(r#"{{"sessionId":"{id}","text":"hello thread"}}"#),
+        );
+        assert_eq!(appended.0, 200);
+        let own = call(&state, "GET", &format!("/api/sessions/{id}"), "");
+        assert_eq!(own.0, 200);
+        assert_eq!(own.1["messages"].as_array().unwrap().len(), 1);
+        assert_eq!(call(&state, "GET", &format!("/api/sessions/{other}"), "").1["messages"].as_array().unwrap().len(), 0);
+
+        // Switch active session: read the other one; cursor moves within `id`.
+        assert_eq!(call(&state, "GET", &format!("/api/sessions/{other}"), "").0, 200);
+        let switched = call(&state, "POST", &format!("/api/sessions/{id}/cursor"), r#"{"eventId":null}"#);
+        assert_eq!(switched.0, 200);
+
+        // Legacy session files for `id`, if any, must go too.
+        let legacy = root.join(".caper").join("sessions");
+        std::fs::create_dir_all(&legacy).unwrap();
+        std::fs::write(legacy.join(format!("{id}.json")), "{}").unwrap();
+        std::fs::write(legacy.join(format!("{id}.jsonl")), "").unwrap();
+
+        // Delete `id`: 404 afterwards, list count decrements, nothing hanging off it.
+        assert_eq!(call(&state, "DELETE", &format!("/api/sessions/{id}"), "").0, 200);
+        assert_eq!(call(&state, "GET", &format!("/api/sessions/{id}"), "").0, 404);
+        assert_eq!(session_count(&state), 1);
+        assert!(!legacy.join(format!("{id}.json")).exists());
+        assert!(!legacy.join(format!("{id}.jsonl")).exists());
+        let db = rusqlite::Connection::open(root.join(".caper").join("conversations.db")).unwrap();
+        for (table, key) in [("conversation", "id"), ("nodes", "conversation_id"), ("participants", "conversation_id"), ("cursor", "conversation_id"), ("memory_leaves", "conversation_id")] {
+            let n: i64 = db.query_row(&format!("SELECT COUNT(*) FROM {table} WHERE {key} = ?1"), [&id], |r| r.get(0)).unwrap();
+            assert_eq!(n, 0, "{table} still holds rows for deleted session");
+        }
+        let _ = std::fs::remove_dir_all(&root);
+    }
+}
