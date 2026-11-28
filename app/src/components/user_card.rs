@@ -30,7 +30,7 @@ pub fn parts(st: &str, v: &str) -> Vec<Node> {
             .child(m("div").class("md-body").inner_html(&format!("{v}.html"))),
         name_tag::user_byline_as(
             st,
-            &format!("({v}.from ? {v}.from : {})", crate::components::presence::user_name(st)),
+            "'dev'",
             &format!("{v}.ts"),
             &format!("{v}.kind === 'user'"),
             m("button")

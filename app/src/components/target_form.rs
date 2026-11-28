@@ -115,6 +115,21 @@ pub fn panel() -> Node {
                         .on("keydown.enter", &format!("{ST}.save()")),
                 ]),
             m("div")
+                .class("ae-field")
+                .show(&format!("{ST}.kind === 'project' && {ST}.mode !== 'edit'"))
+                .kids(vec![
+                    m("label").class("ae-label").kids(vec![
+                        m("span").child(lit("Path")),
+                        m("span").class("hint").child(lit("optional local repo directory")),
+                    ]),
+                    m("input")
+                        .attr("type", "text")
+                        .attr("spellcheck", "false")
+                        .attr("placeholder", "/workspace/project")
+                        .model(&format!("{ST}.path"))
+                        .on("keydown.enter", &format!("{ST}.save()")),
+                ]),
+            m("div")
                 .class("tform-path")
                 .show(&format!("{ST}.kind === 'project' && {ST}.segments().length > 1"))
                 .kids(vec![m("span")
@@ -763,7 +778,11 @@ fn save(_this: JsValue, _args: js_sys::Array) -> JsValue {
             JsValue::from_str(&name),
         ]
     } else {
-        vec![JsValue::from_str("create"), JsValue::from_str(&name)]
+        vec![
+            JsValue::from_str("create"),
+            JsValue::from_str(&name),
+            JsValue::from_str(js::get_str(&s, "path").trim()),
+        ]
     };
     js::call(&host, "saveProject", &args);
     close(JsValue::UNDEFINED, js_sys::Array::new());

@@ -628,9 +628,21 @@ pub fn handle_api(state: &Arc<State>, req: &Request, out: &mut Stream<'_>) {
             "delete" => store
                 .delete_project(&field("name"))
                 .map(|n| serde_json::json!({"unfiled": n})),
-            "assign" => store
-                .assign_project(&field("sessionId"), &field("project"))
-                .map(|n| serde_json::json!({"project": n})),
+            "assign" => {
+                let session_id = field("sessionId");
+                store.assign_project(&session_id, &field("project")).and_then(|name| {
+                    let project_root = if name.is_empty() {
+                        store.project_root.clone()
+                    } else {
+                        crate::local_projects::path_for(&root, &name).unwrap_or_else(|| store.project_root.clone())
+                    };
+                    let mut patch = serde_json::Map::new();
+                    patch.insert("projectRoot".into(), serde_json::json!(project_root));
+                    store.update_meta(&session_id, patch)
+                        .map(|_| serde_json::json!({"project": name, "projectRoot": project_root}))
+                        .ok_or_else(|| "could not persist session project root".to_string())
+                })
+            }
             other => Err(format!("unknown project action: {other}")),
         };
         match result {

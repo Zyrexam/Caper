@@ -1360,8 +1360,16 @@ fn pin_to_bottom() {
 pub(crate) fn load_projects(_this: JsValue, _args: js_sys::Array) -> JsValue {
     api::projects(|v| {
         apply_projects(&js::get(&v, "projects"));
+        apply_active_project(&v);
     });
     JsValue::UNDEFINED
+}
+
+fn apply_active_project(v: &JsValue) {
+    let active = js::get(v, "activeProject");
+    if active.is_undefined() { return; }
+    js::set(&mjs::store_ref(STORE), "projectId", &active);
+    mjs::redraw();
 }
 
 fn apply_projects(list: &JsValue) {
@@ -1492,7 +1500,11 @@ fn save_project(_this: JsValue, args: js_sys::Array) -> JsValue {
     let action = js::arg_str(&args, 0);
     let payload = js::obj();
     match action.as_str() {
-        "create" => js::set_str(&payload, "name", &js::arg_str(&args, 1)),
+        "create" => {
+            js::set_str(&payload, "name", &js::arg_str(&args, 1));
+            let path = js::arg_str(&args, 2);
+            if !path.trim().is_empty() { js::set_str(&payload, "path", path.trim()); }
+        }
         "rename" => {
             js::set_str(&payload, "from", &js::arg_str(&args, 1));
             js::set_str(&payload, "to", &js::arg_str(&args, 2));
@@ -1506,6 +1518,12 @@ fn save_project(_this: JsValue, args: js_sys::Array) -> JsValue {
         if !created.is_empty() {
             let s = mjs::store_ref(STORE);
             js::set_str(&s, "projectId", &created);
+            let select = js::obj();
+            js::set_str(&select, "name", &created);
+            api::project_action("select", &select.into(), |sv| {
+                apply_projects(&js::get(&sv, "projects"));
+                apply_active_project(&sv);
+            });
             let id = js::get_str(&s, "activeId");
             if !id.is_empty() {
                 js::set_str(&js::get(&s, "session"), "project", &created);
@@ -1597,7 +1615,10 @@ fn pick_target(_this: JsValue, args: js_sys::Array) -> JsValue {
         // not just a tag on the open session; the server remembers it.
         let sel = js::obj();
         js::set_str(&sel, "name", &value);
-        api::project_action("select", &sel.into(), |_| {});
+        api::project_action("select", &sel.into(), |v| {
+            apply_projects(&js::get(&v, "projects"));
+            apply_active_project(&v);
+        });
         let id = js::get_str(&s, "activeId");
         if !id.is_empty() {
             js::set_str(&js::get(&s, "session"), "project", &value);
