@@ -37,6 +37,7 @@ pub const CSS: &str = r#"
   resize: vertical;
 }
 :is(#sb, #home) .ae-field textarea { min-height: 64px; font-size: 12px; }
+:is(#sb, #home) .ae-mcp-presets { margin: -9px 0 0; color: var(--gray-dim); font-size: 10px; line-height: 1.5; }
 
 :is(#sb, #home) .ae-field input.ae-num { width: 7em; }
 :is(#sb, #home) .ae-field input.ae-num::-webkit-outer-spin-button,
@@ -300,11 +301,14 @@ pub fn agent_editor() -> Node {
             ),
             field(
                 "MCP servers",
-                "one per line",
+                "configured names only, one per line",
                 &format!("{ST}.draft.mcp"),
-                "file-io\nterm-local",
+                "",
                 2,
             ),
+            m("p")
+                .class("ae-mcp-presets")
+                .text(&format!("({ST}.mcpPresets.length ? 'Available: ' + {ST}.mcpPresets.join(', ') : 'No MCP servers are configured')")),
             field(
                 "Allowlist",
                 "auto-approved tools, one per line. Empty approves nothing",

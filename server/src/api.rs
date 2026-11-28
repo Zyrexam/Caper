@@ -282,6 +282,36 @@ fn query_str(req: &Request, key: &str) -> String {
     String::new()
 }
 
+fn session_agent(
+    store: &angela::conv_store::ConvStore,
+    requested: Option<&str>,
+) -> Result<angela::agent_loader::AgentDef, String> {
+    let available = angela::mcp_presets::names();
+    if let Some(name) = requested {
+        let agent = store
+            .agents()
+            .get(name)
+            .ok_or_else(|| format!("no agent named {name:?}"))?;
+        let missing = agent
+            .mcp
+            .iter()
+            .filter(|name| !available.contains(name))
+            .cloned()
+            .collect::<Vec<_>>();
+        if !missing.is_empty() {
+            return Err(format!("MCP servers are not configured: {}", missing.join(", ")));
+        }
+        return Ok(agent);
+    }
+
+    Ok(store
+        .agents()
+        .list()
+        .into_iter()
+        .find(|agent| agent.mcp.iter().all(|name| available.contains(name)))
+        .unwrap_or_else(angela::agent_loader::default_agent))
+}
+
 /// Create a session filed under a project. `project` (explicit) or, when
 /// absent, the active local project names the folder; a local project added
 /// from a directory sets `projectRoot` so edits happen in its context.
@@ -299,13 +329,37 @@ fn create_session_in_project(
     };
     let project_root_dir = explicit_project_root
         .or_else(|| project.as_deref().and_then(|n| crate::local_projects::path_for(root, n).map(|p| p.to_string_lossy().to_string())));
+    let agent = session_agent(store, str_field("agent").as_deref())?;
+    let model = str_field("model").or_else(|| {
+        (!agent.model.trim().is_empty()).then(|| agent.model.clone())
+    });
     let s = store.create(angela::session_store::NewSession {
-        agent: str_field("agent"),
-        model: str_field("model"),
+        agent: Some(agent.name.clone()),
+        model: model.clone(),
         title: str_field("title"),
         ..Default::default()
     }).map_err(|e| e.to_string())?;
     let id = s.get("id").and_then(Value::as_str).unwrap_or_default().to_string();
+    if id.is_empty() {
+        return Err("created session has no id".into());
+    }
+    let built_in = store.agents().get(&agent.name).is_none();
+    let handle = if built_in { "assistant" } else { agent.name.as_str() };
+    let display_name = if built_in { "Assistant" } else { agent.name.as_str() };
+    if store.add_participant(
+        &id,
+        "agent",
+        handle,
+        Some(display_name),
+        Some(&agent.name),
+        model.as_deref(),
+        &agent.system_prompt(),
+        agent.avatar.as_deref(),
+        None,
+    ).is_none() {
+        store.delete(&id);
+        return Err("could not seat the default agent".into());
+    }
     let mut patch = serde_json::Map::new();
     if let Some(p) = project.filter(|p| !p.is_empty()) {
         let _ = store.create_project(&p); // a session inside it implies the folder exists
@@ -808,6 +862,9 @@ mod latest_event_tests {
 mod session_crud_tests {
     use super::*;
     use std::io::{Read, Write};
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static TEMP_ROOT_COUNTER: AtomicU64 = AtomicU64::new(0);
 
     struct CaperRootGuard(Option<std::ffi::OsString>);
 
@@ -829,11 +886,11 @@ mod session_crud_tests {
     }
 
     fn temp_root(tag: &str) -> std::path::PathBuf {
-        let nanos = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_nanos();
-        let dir = std::env::temp_dir().join(format!("caper-session-crud-{tag}-{nanos}"));
+        let serial = TEMP_ROOT_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let dir = std::env::temp_dir().join(format!(
+            "caper-session-crud-{tag}-{}-{serial}",
+            std::process::id()
+        ));
         std::fs::create_dir_all(&dir).unwrap();
         dir
     }
@@ -877,6 +934,24 @@ mod session_crud_tests {
             .and_then(Value::as_array)
             .map(Vec::len)
             .unwrap_or(usize::MAX)
+    }
+
+    #[test]
+    fn a_new_session_has_a_usable_agent_seated() {
+        let root = temp_root("agent-seat");
+        let _caper_root = CaperRootGuard::set(&root);
+        let store = angela::conv_store::ConvStore::memory(&root).unwrap();
+        let session = create_session_in_project(&store, &root, &serde_json::json!({})).unwrap();
+        let id = session["id"].as_str().unwrap();
+        let agents = store.agent_participants(id);
+
+        assert_eq!(agents.len(), 1);
+        assert_eq!(agents[0].agent_name.as_deref(), Some("default"));
+        assert_eq!(agents[0].handle, "assistant");
+        assert!(angela::agent_loader::default_agent().mcp.is_empty());
+
+        drop(store);
+        std::fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]

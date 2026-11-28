@@ -630,6 +630,24 @@ fn agent_from_body(body: &Value, base: Option<crate::agent_loader::AgentDef>) ->
     def
 }
 
+fn missing_mcp_presets(requested: &[String], available: &[String]) -> Vec<String> {
+    requested
+        .iter()
+        .filter(|name| !available.iter().any(|preset| preset == *name))
+        .cloned()
+        .collect()
+}
+
+fn mcp_config_error(def: &crate::agent_loader::AgentDef) -> Option<String> {
+    let missing = missing_mcp_presets(&def.mcp, &crate::mcp_presets::names());
+    (!missing.is_empty()).then(|| {
+        format!(
+            "MCP servers are not configured: {}",
+            missing.join(", ")
+        )
+    })
+}
+
 /// Split `/api/sessions/<id>/<rest>` into its id and sub-path.
 ///
 /// The bare `/api/sessions/<id>` form returns an empty `rest`, so one
@@ -846,6 +864,10 @@ impl Server {
             ("POST", "/api/agents") => {
                 let body = req.json();
                 let def = agent_from_body(&body, None);
+                if let Some(error) = mcp_config_error(&def) {
+                    sink.json(400, &json!({ "error": error }));
+                    return;
+                }
                 match st.store.agents().save(&def, None) {
                     Ok(a) => sink.json(200, &json!({ "ok": true, "agent": a.to_json() })),
                     Err(e) => sink.json(400, &json!({ "error": e.to_string() })),
@@ -871,6 +893,10 @@ impl Server {
                 // Over the stored definition, so a partial body patches
                 // rather than blanks.
                 let def = agent_from_body(&body, Some(existing));
+                if let Some(error) = mcp_config_error(&def) {
+                    sink.json(400, &json!({ "error": error }));
+                    return;
+                }
                 match agents.save(&def, Some(name)) {
                     Ok(a) => sink.json(200, &json!({ "ok": true, "agent": a.to_json() })),
                     Err(e) => sink.json(400, &json!({ "error": e.to_string() })),
@@ -1592,6 +1618,15 @@ mod transcript_tests {
             .unwrap()
             .to_string();
         (s, id)
+    }
+
+    #[test]
+    fn agent_mcp_names_must_be_configured() {
+        let missing = missing_mcp_presets(
+            &["file-io".into(), "term-local".into(), "calendar".into()],
+            &["calendar".into()],
+        );
+        assert_eq!(missing, ["file-io", "term-local"]);
     }
 
     #[test]

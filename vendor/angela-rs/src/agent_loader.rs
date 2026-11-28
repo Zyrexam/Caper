@@ -609,13 +609,12 @@ pub fn list_files(project_root: &Path) -> Vec<AgentDef> {
 
 /// The definition used when a project defines no agents.
 ///
-/// Local file I/O and shell, asking before each call — safe to hand someone
-/// who has not configured anything.
+/// Built-in assistant for sessions with no usable configured agent.
 pub fn default_agent() -> AgentDef {
     AgentDef {
         name: "default".into(),
-        description: "Local coding assistant (file-io + term-local)".into(),
-        mcp: vec!["file-io".into(), "term-local".into()],
+        description: "Local coding assistant".into(),
+        mcp: Vec::new(),
         soul: "You are a coding assistant with access to the local project.\n\
                  Use the tools to list, read, search and edit files, and to run \
                  shell commands, rather than guessing. Be concise and concrete, \
@@ -634,6 +633,11 @@ pub fn default_system_prompt() -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn built_in_agent_does_not_depend_on_unconfigured_mcp_servers() {
+        assert!(super::default_agent().mcp.is_empty());
+    }
+
     #[test]
     fn a_turn_budget_survives_the_json_round_trip() {
         use super::{from_json, AgentDef};
