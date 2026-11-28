@@ -35,22 +35,10 @@ fn migrate_legacy_store(root: &std::path::Path) {
 }
 
 pub(crate) fn angela(port: u16) -> &'static AngelaServer {
-    use std::sync::{Mutex, OnceLock};
-    // One embedded server per project root. The shipped app only ever uses
-    // its one workspace root; keying by root keeps independent callers (and
-    // tests) from sharing one `.caper` store. `Box::leak` because callers
-    // receive `&'static`.
-    static SERVERS: OnceLock<Mutex<std::collections::HashMap<std::path::PathBuf, &'static AngelaServer>>> = OnceLock::new();
-    let map = SERVERS.get_or_init(|| Mutex::new(std::collections::HashMap::new()));
-    let root = project_root();
-    let mut guard = map.lock().unwrap_or_else(|e| e.into_inner());
-    if let Some(server) = guard.get(&root) {
-        return server;
-    }
-    let server = build_angela_server(&root, port);
-    let leaked: &'static AngelaServer = Box::leak(Box::new(server));
-    guard.insert(root.clone(), leaked);
-    leaked
+    use std::sync::OnceLock;
+    // One local app, one `.caper` store, one process-wide sandbox backend.
+    static SERVER: OnceLock<AngelaServer> = OnceLock::new();
+    SERVER.get_or_init(|| build_angela_server(&project_root(), port))
 }
 
 fn build_angela_server(root: &std::path::Path, port: u16) -> AngelaServer {
@@ -305,8 +293,11 @@ fn create_session_in_project(
 ) -> Result<Value, String> {
     let str_field = |k: &str| body.get(k).and_then(Value::as_str).map(str::trim).filter(|s| !s.is_empty()).map(str::to_string);
     let project = str_field("project").or_else(|| crate::local_projects::active_name(root));
-    let project_root_dir = str_field("projectRoot")
-        .or_else(|| str_field("project_root"))
+    let explicit_project_root = match str_field("projectRoot").or_else(|| str_field("project_root")) {
+        Some(raw) => Some(crate::hostgit::check_path(&raw)?.to_string_lossy().to_string()),
+        None => None,
+    };
+    let project_root_dir = explicit_project_root
         .or_else(|| project.as_deref().and_then(|n| crate::local_projects::path_for(root, n).map(|p| p.to_string_lossy().to_string())));
     let s = store.create(angela::session_store::NewSession {
         agent: str_field("agent"),
@@ -321,7 +312,11 @@ fn create_session_in_project(
         patch.insert("project".into(), Value::String(p));
     }
     if let Some(pr) = project_root_dir.filter(|p| !p.is_empty()) { patch.insert("projectRoot".into(), Value::String(pr)); }
-    if patch.is_empty() { Ok(s) } else { Ok(store.update_meta(&id, patch).unwrap_or(s)) }
+    if patch.is_empty() {
+        Ok(s)
+    } else {
+        store.update_meta(&id, patch).ok_or_else(|| "could not persist session project context".to_string())
+    }
 }
 
 pub fn handle_api(state: &Arc<State>, req: &Request, out: &mut Stream<'_>) {
@@ -802,6 +797,25 @@ mod session_crud_tests {
     use super::*;
     use std::io::{Read, Write};
 
+    struct CaperRootGuard(Option<std::ffi::OsString>);
+
+    impl CaperRootGuard {
+        fn set(root: &std::path::Path) -> Self {
+            let old = std::env::var_os("CAPER_ROOT");
+            std::env::set_var("CAPER_ROOT", root);
+            Self(old)
+        }
+    }
+
+    impl Drop for CaperRootGuard {
+        fn drop(&mut self) {
+            match self.0.take() {
+                Some(value) => std::env::set_var("CAPER_ROOT", value),
+                None => std::env::remove_var("CAPER_ROOT"),
+            }
+        }
+    }
+
     fn temp_root(tag: &str) -> std::path::PathBuf {
         let nanos = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -856,7 +870,7 @@ mod session_crud_tests {
     #[test]
     fn session_crud_needs_no_identity_and_delete_removes_everything() {
         let root = temp_root("crud");
-        std::env::set_var("CAPER_ROOT", &root);
+        let _caper_root = CaperRootGuard::set(&root);
         let config = rustex1_devserver::Config::discover(&root);
         let state = Arc::new(State::new(config, std::collections::HashMap::new()));
 
@@ -946,6 +960,13 @@ mod local_projects_tests {
         let edit_root = one["projectRoot"].as_str().unwrap();
         assert!(std::path::Path::new(edit_root).is_dir());
         assert_eq!(std::path::Path::new(edit_root).file_name().unwrap().to_string_lossy(), repo.file_name().unwrap().to_string_lossy());
+
+        // Explicit project roots must be real local directories.
+        assert!(create_session_in_project(
+            &store,
+            &root,
+            &serde_json::json!({"projectRoot": root.join("does-not-exist")}),
+        ).is_err());
 
         // An explicit `project` on the request overrides the active one.
         let other = create_session_in_project(&store, &root, &serde_json::json!({"project": "elsewhere"})).unwrap();

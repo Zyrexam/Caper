@@ -38,7 +38,9 @@ impl Gate for GateImpl {
         if !self.early(req, peer) {
             return GateVerdict::HangUp;
         }
-        if NOT_EXPOSED.contains(&req.path.as_str()) {
+        if NOT_EXPOSED.iter().any(|blocked| {
+            req.path.strip_prefix(blocked).is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))
+        }) {
             // No identity/auth routes exist; reject instead of serving the SPA fallback.
             return GateVerdict::Reply(GateReply {
                 status: 404,
@@ -80,6 +82,10 @@ mod tests {
                 GateVerdict::Reply(reply) => assert_eq!(reply.status, 404, "{path}"),
                 _ => panic!("expected {path} to be rejected"),
             }
+        }
+        match GateImpl.handle(&loopback_request("/share/session-id"), peer) {
+            GateVerdict::Reply(reply) => assert_eq!(reply.status, 404),
+            _ => panic!("expected /share/* to be rejected"),
         }
     }
 
